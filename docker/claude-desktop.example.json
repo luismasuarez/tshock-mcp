@@ -1,0 +1,27 @@
+{
+  "mcpServers": {
+    "tshock": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "TSHOCK_REST_URL",
+        "-e",
+        "TSHOCK_TOKEN",
+        "-e",
+        "TSHOCK_MCP_ALLOW_WRITE",
+        "-e",
+        "TSHOCK_MCP_ALLOW_INSECURE",
+        "tshock-mcp:local"
+      ],
+      "env": {
+        "TSHOCK_REST_URL": "http://host.docker.internal:7878",
+        "TSHOCK_TOKEN": "REPLACE_WITH_A_LONG_RANDOM_TOKEN",
+        "TSHOCK_MCP_ALLOW_WRITE": "false",
+        "TSHOCK_MCP_ALLOW_INSECURE": "true"
+      }
+    }
+  }
+}

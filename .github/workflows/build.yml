@@ -1,0 +1,53 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/Directory.Build.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build -c Release --no-restore
+
+      # The unit test project lives at tests/TShock.MCP.Server.Tests. The guard
+      # keeps the step informative if the project is ever moved or renamed.
+      - name: Test
+        run: |
+          if [ -n "$(find tests -name '*.csproj' -print -quit 2>/dev/null)" ]; then
+            dotnet test -c Release --no-build
+          else
+            echo "No test project found under tests/; skipping."
+          fi
+
+      - name: End-to-end smoke test
+        run: python3 tests/e2e/mcp_stdio_smoke.py
