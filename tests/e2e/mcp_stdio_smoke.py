@@ -44,6 +44,10 @@ REGIONS = [
     },
 ]
 
+# Mirrors the server-side policy: these owners are allowed, nobody else.
+ALLOWED_OWNERS = {"mcp-gateway", "alice"}
+DEFAULT_OWNER = "mcp-gateway"
+
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
@@ -143,13 +147,68 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "hasMore": False, "session": "bridge-session",
         })
 
+    def do_POST(self) -> None:
+        parsed = urlparse(self.path)
+        bridge_seen.append(parsed.path)
+
+        if self.headers.get("Authorization") != f"Bearer {BRIDGE_TOKEN}":
+            self._json(401, {"error": "unauthorized"})
+            return
+
+        if parsed.path != "/v1/regions":
+            self._json(404, {"error": "not_found"})
+            return
+
+        length = int(self.headers.get("Content-Length", "0"))
+        body = json.loads(self.rfile.read(length) or b"{}")
+        owner = (body.get("owner") or DEFAULT_OWNER).strip()
+        name = (body.get("name") or "").strip()
+
+        if any(region["name"] == name for region in REGIONS):
+            self._json(409, {"error": "region_exists"})
+            return
+
+        if owner not in ALLOWED_OWNERS:
+            self._json(403, {"error": "owner_not_allowed"})
+            return
+
+        region = {
+            "id": len(REGIONS) + 1, "name": name, "x": body["x"], "y": body["y"],
+            "width": body["width"], "height": body["height"], "owner": owner,
+            "disableBuild": True, "z": 0, "allowedIds": [], "allowedGroups": [],
+        }
+        REGIONS.append(region)
+        self._json(201, region)
+
+    def do_DELETE(self) -> None:
+        parsed = urlparse(self.path)
+        bridge_seen.append(parsed.path)
+
+        if self.headers.get("Authorization") != f"Bearer {BRIDGE_TOKEN}":
+            self._json(401, {"error": "unauthorized"})
+            return
+
+        if not parsed.path.startswith("/v1/regions/"):
+            self._json(404, {"error": "not_found"})
+            return
+
+        name = unquote(parsed.path[len("/v1/regions/"):])
+        region = next((item for item in REGIONS if item["name"] == name), None)
+        if region is None:
+            self._json(404, {"error": "region_not_found"})
+            return
+
+        REGIONS.remove(region)
+        self._json(204, {})
+
     def _json(self, status: int, payload: dict) -> None:
         body = json.dumps(payload).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
+        if body:
+            self.wfile.write(body)
 
     def log_message(self, *args: object) -> None:
         pass
@@ -186,6 +245,8 @@ def run(
     allow_write: bool,
     token: str = TOKEN,
     bridge: tuple[str, str] | None = None,
+    write_scenario: bool = False,
+    elicit: str | None = None,
 ) -> tuple[dict, str]:
     env = dict(os.environ)
     env.update({
@@ -221,15 +282,36 @@ def run(
               "params": {"name": name, "arguments": arguments}})
         while True:
             message = read_message(messages)
+            if message.get("method") == "elicitation/create":
+                send({"jsonrpc": "2.0", "id": message["id"],
+                      "result": {"action": "decline", "content": {"confirm": False}}})
+                continue
             if message.get("id") == call_id:
                 return message["result"]
 
-    def call(call_id: int, name: str, arguments: dict) -> dict:
-        return json.loads(raw_call(call_id, name, arguments)["content"][0]["text"])
+    def call(call_id: int, name: str, arguments: dict, elicit_action: str | None = None) -> dict:
+        send({"jsonrpc": "2.0", "id": call_id, "method": "tools/call",
+              "params": {"name": name, "arguments": arguments}})
+        while True:
+            message = read_message(messages)
+            if message.get("method") == "elicitation/create":
+                # Answer the operator prompt the server sent us.
+                action = elicit_action or "decline"
+                send({
+                    "jsonrpc": "2.0",
+                    "id": message["id"],
+                    "result": {"action": action, "content": {"confirm": action == "accept"}},
+                })
+                continue
+            if message.get("id") == call_id:
+                return json.loads(message["result"]["content"][0]["text"])
 
     send({"jsonrpc": "2.0", "id": 1, "method": "initialize",
-          "params": {"protocolVersion": "2025-06-18", "capabilities": {},
-                     "clientInfo": {"name": "e2e", "version": "0.1"}}})
+          "params": {
+              "protocolVersion": "2025-11-25" if elicit else "2025-06-18",
+              "capabilities": {"elicitation": {}} if elicit else {},
+              "clientInfo": {"name": "e2e", "version": "0.1"},
+          }})
     while read_message(messages).get("id") != 1:
         pass
     send({"jsonrpc": "2.0", "method": "notifications/initialized"})
@@ -256,10 +338,40 @@ def run(
         results["region_missing"] = call(17, "region_info", {"name": "nope"})
         results["region_bad_name"] = raw_call(18, "region_info", {"name": ""})
 
-    send({"jsonrpc": "2.0", "id": 19, "method": "tools/list", "params": {}})
+        if write_scenario:
+            results["region_create"] = call(
+                19, "region_create",
+                {"name": "arena", "x": 300, "y": 300, "width": 20, "height": 20})
+            results["region_create_again"] = call(
+                20, "region_create",
+                {"name": "arena", "x": 300, "y": 300, "width": 20, "height": 20})
+            results["region_create_bad_owner"] = call(
+                21, "region_create",
+                {"name": "otra", "x": 300, "y": 300, "width": 20, "height": 20,
+                 "owner": "mallory"})
+            results["region_create_owner"] = call(
+                22, "region_create",
+                {"name": "parcela", "x": 300, "y": 300, "width": 20, "height": 20,
+                 "owner": "alice"})
+            results["region_delete_unconfirmed"] = call(23, "region_delete", {"name": "arena"})
+            results["region_delete"] = call(24, "region_delete", {"name": "arena", "confirm": True})
+            results["region_delete_again"] = call(
+                25, "region_delete", {"name": "arena", "confirm": True})
+        elif elicit:
+            results["region_delete_elicit"] = call(
+                19, "region_delete", {"name": "parcela"}, elicit_action=elicit)
+            results["regions_after"] = call(20, "regions_list", {})
+        else:
+            results["region_create_disabled"] = call(
+                19, "region_create",
+                {"name": "arena", "x": 300, "y": 300, "width": 20, "height": 20})
+            results["region_delete_disabled"] = call(
+                20, "region_delete", {"name": "arena", "confirm": True})
+
+    send({"jsonrpc": "2.0", "id": 26, "method": "tools/list", "params": {}})
     while True:
         message = read_message(messages)
-        if message.get("id") == 19:
+        if message.get("id") == 26:
             results["tools"] = {tool["name"]: tool for tool in message["result"]["tools"]}
             break
     proc.stdin.close()
@@ -376,11 +488,64 @@ def main() -> int:
             check(bad_name["error"]["code"] == "invalid_argument",
                   "an empty region name keeps the invalid_argument envelope")
 
+            check(results["region_create_disabled"]["error"]["code"] == "write_disabled",
+                  "region_create is blocked when writes are disabled")
+            check(results["region_delete_disabled"]["error"]["code"] == "write_disabled",
+                  "region_delete is blocked when writes are disabled")
+
             # 4 events reads + regions_list + region_info(spawn) + region_info(mi arena)
-            # + region_info(nope). The two invalid calls must not appear here.
+            # + region_info(nope). Neither the invalid calls nor the blocked writes
+            # may appear here.
             check(len(bridge_seen) - before == 8,
-                  "invalid arguments never reach the bridge")
+                  "invalid arguments and blocked writes never reach the bridge")
             check(BRIDGE_TOKEN not in stderr, "bridge token never appears in stderr")
+
+            # Write acceptance: the same real binary, now with writes enabled.
+            before = len(bridge_seen)
+            results, stderr = run(
+                port, allow_write=True, bridge=(bridge_url, BRIDGE_TOKEN), write_scenario=True)
+
+            check(results["region_create"]["ok"] is True and
+                  results["region_create"]["data"]["owner"] == "mcp-gateway",
+                  "region_create creates the region with the policy default owner")
+            check(results["region_create_again"]["error"]["code"] == "region_exists",
+                  "creating an existing region maps to region_exists")
+            check(results["region_create_bad_owner"]["error"]["code"] == "owner_not_allowed",
+                  "an owner outside the server policy maps to owner_not_allowed")
+            check(results["region_create_owner"]["data"]["owner"] == "alice",
+                  "an allowed owner is forwarded to the bridge")
+            check(results["region_delete_unconfirmed"]["error"]["code"] == "confirmation_required",
+                  "deleting without confirmation is refused when the client cannot ask")
+            check(results["region_delete"]["ok"] is True, "region_delete deletes the region")
+            check(results["region_delete_again"]["error"]["code"] == "region_not_found",
+                  "deleting a missing region maps to region_not_found")
+
+            # 8 read calls + 2 successful creates + 1 rejected create + 1 rejected
+            # create owner + 1 delete + 1 delete-again. The unconfirmed delete must
+            # never reach the bridge.
+            check(len(bridge_seen) - before == 14,
+                  "an unconfirmed delete never reaches the bridge")
+            check(BRIDGE_TOKEN not in stderr, "bridge token stays out of stderr with writes")
+
+            # Elicitation: the client declares the capability, so the server asks
+            # the operator instead of trusting a boolean from the model.
+            results, _ = run(
+                port, allow_write=True, bridge=(bridge_url, BRIDGE_TOKEN), elicit="decline")
+            check(results["region_delete_elicit"]["error"]["code"] == "confirmation_declined",
+                  "a declined elicitation cancels the deletion")
+            check(any(region["name"] == "parcela"
+                      for region in results["regions_after"]["data"]["regions"]),
+                  "a declined deletion leaves the region in place")
+
+            results, stderr = run(
+                port, allow_write=True, bridge=(bridge_url, BRIDGE_TOKEN), elicit="accept")
+            check(results["region_delete_elicit"]["ok"] is True and
+                  results["region_delete_elicit"]["data"]["deleted"] is True,
+                  "an accepted elicitation deletes the region")
+            check(not any(region["name"] == "parcela"
+                          for region in results["regions_after"]["data"]["regions"]),
+                  "an accepted deletion removes the region")
+            check(BRIDGE_TOKEN not in stderr, "bridge token stays out of stderr with elicitation")
 
             bridge_server.shutdown()
             bridge_server.server_close()

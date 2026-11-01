@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using ModelContextProtocol.Protocol;
 using TShock.MCP.Server.Tests.TestDoubles;
 using TShock.McpServer.Tools;
 using TShock.McpServer.TShock;
@@ -7,10 +8,10 @@ namespace TShock.MCP.Server.Tests;
 
 public sealed class BridgeToolsTests
 {
-    private static (BridgeTools Tools, RecordingBridgeClient Client) Arrange()
+    private static (BridgeTools Tools, RecordingBridgeClient Client) Arrange(bool allowWrite = true)
     {
         var client = new RecordingBridgeClient();
-        return (new BridgeTools(client), client);
+        return (new BridgeTools(client, TestOptions.Create(allowWrite: allowWrite)), client);
     }
 
     private static void AssertInvalidArgument(string output, string expectedMessageFragment)
@@ -216,13 +217,215 @@ public sealed class BridgeToolsTests
         Assert.Equal("bridge_unavailable", error["code"]!.GetValue<string>());
     }
 
+    [Theory]
+    [InlineData(false, null, false, BridgeTools.DeleteDecision.RequireConfirmation)]
+    [InlineData(false, true, false, BridgeTools.DeleteDecision.Proceed)]
+    [InlineData(true, null, false, BridgeTools.DeleteDecision.Ask)]
+    [InlineData(true, null, true, BridgeTools.DeleteDecision.Ask)]
+    [InlineData(true, true, null, BridgeTools.DeleteDecision.Proceed)]
+    [InlineData(true, false, null, BridgeTools.DeleteDecision.Decline)]
+    public void DecideDelete_IsCapabilityDriven(
+        bool canElicit,
+        bool? answered,
+        bool? confirm,
+        BridgeTools.DeleteDecision expected)
+    {
+        Assert.Equal(expected, BridgeTools.DecideDelete(canElicit, answered, confirm));
+    }
+
+    [Fact]
+    public void AnsweredConfirmation_ReadsTheOperatorAnswer()
+    {
+        var accepted = new Dictionary<string, InputResponse>
+        {
+            [BridgeTools.ConfirmationKey] = InputResponse.FromElicitResult(
+                new ElicitResult { Action = "accept" })
+        };
+        var declined = new Dictionary<string, InputResponse>
+        {
+            [BridgeTools.ConfirmationKey] = InputResponse.FromElicitResult(
+                new ElicitResult { Action = "decline" })
+        };
+
+        Assert.True(BridgeTools.AnsweredConfirmation(accepted));
+        Assert.False(BridgeTools.AnsweredConfirmation(declined));
+        Assert.Null(BridgeTools.AnsweredConfirmation(null));
+        Assert.Null(BridgeTools.AnsweredConfirmation(new Dictionary<string, InputResponse>()));
+    }
+
+    [Fact]
+    public async Task RegionCreate_IsBlockedWhenWritesAreDisabled()
+    {
+        var (tools, client) = Arrange(allowWrite: false);
+
+        var output = await tools.RegionCreate("arena", 10, 10, 20, 20);
+
+        var error = Assert.IsType<JsonObject>(
+            Assert.IsType<JsonObject>(JsonNode.Parse(output))["error"]);
+        Assert.Equal("write_disabled", error["code"]!.GetValue<string>());
+        Assert.Empty(client.Calls);
+    }
+
+    [Fact]
+    public async Task RegionCreate_SendsTheBodyWithoutOwnerByDefault()
+    {
+        var (tools, client) = Arrange();
+
+        await tools.RegionCreate("arena", 10, 20, 30, 40);
+
+        var call = Assert.Single(client.Calls);
+        Assert.Equal("POST", call.Method);
+        Assert.Equal("/v1/regions", call.Path);
+        Assert.Equal("arena", call.Body!["name"]!.GetValue<string>());
+        Assert.Equal(10, call.Body["x"]!.GetValue<int>());
+        Assert.Equal(20, call.Body["y"]!.GetValue<int>());
+        Assert.Equal(30, call.Body["width"]!.GetValue<int>());
+        Assert.Equal(40, call.Body["height"]!.GetValue<int>());
+        Assert.False(call.Body!.AsObject().ContainsKey("owner"));
+    }
+
+    [Fact]
+    public async Task RegionCreate_ForwardsTheRequestedOwner()
+    {
+        var (tools, client) = Arrange();
+
+        await tools.RegionCreate("parcela", 10, 20, 30, 40, owner: "Alice");
+
+        Assert.Equal("Alice", Assert.Single(client.Calls).Body!["owner"]!.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData(0, 10)]
+    [InlineData(10, 0)]
+    [InlineData(-1, 10)]
+    public async Task RegionCreate_RejectsInvalidSizeBeforeTheNetwork(int width, int height)
+    {
+        var (tools, client) = Arrange();
+
+        var output = await tools.RegionCreate("arena", 10, 10, width, height);
+
+        AssertInvalidArgument(output, "width");
+        Assert.Empty(client.Calls);
+    }
+
+    [Fact]
+    public async Task RegionCreate_MapsAPolicyRejectionToOwnerNotAllowed()
+    {
+        var (tools, client) = Arrange();
+        client.Result = BridgeResult.Failure(
+            "bridge_error",
+            "The bridge returned HTTP 403 (owner_not_allowed).",
+            403) with { BridgeError = "owner_not_allowed" };
+
+        var output = await tools.RegionCreate("parcela", 10, 10, 20, 20, owner: "Alice");
+
+        var error = Assert.IsType<JsonObject>(
+            Assert.IsType<JsonObject>(JsonNode.Parse(output))["error"]);
+        Assert.Equal("owner_not_allowed", error["code"]!.GetValue<string>());
+        Assert.Equal(403, error["httpStatus"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public async Task RegionCreate_MapsAnExistingRegion()
+    {
+        var (tools, client) = Arrange();
+        client.Result = BridgeResult.Failure(
+            "bridge_error",
+            "The bridge returned HTTP 409 (region_exists).",
+            409) with { BridgeError = "region_exists" };
+
+        var output = await tools.RegionCreate("arena", 10, 10, 20, 20);
+
+        var error = Assert.IsType<JsonObject>(
+            Assert.IsType<JsonObject>(JsonNode.Parse(output))["error"]);
+        Assert.Equal("region_exists", error["code"]!.GetValue<string>());
+        Assert.Equal(409, error["httpStatus"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public async Task RegionCreate_MapsAWorldBoundsRejectionToInvalidArgument()
+    {
+        var (tools, client) = Arrange();
+        client.Result = BridgeResult.Failure(
+            "bridge_error",
+            "The bridge returned HTTP 400 (out_of_bounds).",
+            400) with { BridgeError = "out_of_bounds" };
+
+        var output = await tools.RegionCreate("arena", 9999, 9999, 20, 20);
+
+        var error = Assert.IsType<JsonObject>(
+            Assert.IsType<JsonObject>(JsonNode.Parse(output))["error"]);
+        Assert.Equal("invalid_argument", error["code"]!.GetValue<string>());
+        Assert.Equal(400, error["httpStatus"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public async Task RegionDelete_IsBlockedWhenWritesAreDisabled()
+    {
+        var (tools, client) = Arrange(allowWrite: false);
+
+        var output = await tools.RegionDelete(null!, null!, "arena", confirm: true);
+
+        var error = Assert.IsType<JsonObject>(
+            Assert.IsType<JsonObject>(JsonNode.Parse(output))["error"]);
+        Assert.Equal("write_disabled", error["code"]!.GetValue<string>());
+        Assert.Empty(client.Calls);
+    }
+
+    [Fact]
+    public async Task RegionDelete_ValidatesTheNameBeforeTheNetwork()
+    {
+        var (tools, client) = Arrange();
+
+        var output = await tools.RegionDelete(null!, null!, "");
+
+        AssertInvalidArgument(output, "name");
+        Assert.Empty(client.Calls);
+    }
+
+    [Fact]
+    public async Task RegionDelete_MapsAMissingRegion()
+    {
+        var (tools, client) = Arrange();
+        client.Result = BridgeResult.Failure(
+            "bridge_error",
+            "The bridge returned HTTP 404 (region_not_found).",
+            404) with { BridgeError = "region_not_found" };
+
+        var output = await tools.RegionDelete(null!, null!, "nope", confirm: true);
+
+        var error = Assert.IsType<JsonObject>(
+            Assert.IsType<JsonObject>(JsonNode.Parse(output))["error"]);
+        Assert.Equal("region_not_found", error["code"]!.GetValue<string>());
+        Assert.Equal(404, error["httpStatus"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public async Task RegionCreate_ReportsAnUnconfiguredBridge()
+    {
+        var tools = new BridgeTools(
+            new RecordingBridgeClient
+            {
+                Result = BridgeResult.Failure("bridge_unavailable", "The TShock bridge is not configured.")
+            },
+            TestOptions.Create(allowWrite: true));
+
+        var output = await tools.RegionCreate("arena", 10, 10, 20, 20);
+
+        var error = Assert.IsType<JsonObject>(
+            Assert.IsType<JsonObject>(JsonNode.Parse(output))["error"]);
+        Assert.Equal("bridge_unavailable", error["code"]!.GetValue<string>());
+    }
+
     [Fact]
     public async Task EventsSince_ReportsAnUnconfiguredBridge()
     {
-        var tools = new BridgeTools(new RecordingBridgeClient
-        {
-            Result = BridgeResult.Failure("bridge_unavailable", "The TShock bridge is not configured.")
-        });
+        var tools = new BridgeTools(
+            new RecordingBridgeClient
+            {
+                Result = BridgeResult.Failure("bridge_unavailable", "The TShock bridge is not configured.")
+            },
+            TestOptions.Create());
 
         var output = await tools.EventsSince();
 

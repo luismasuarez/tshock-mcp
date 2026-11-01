@@ -19,7 +19,7 @@ usar la funcionalidad.
 | Unidad | Lógica pura: validación, sobre, redacción, ring buffer. | `dotnet test -c Release` | Ninguna | No |
 | Plugin HTTP | Contrato del puente: rutas, cursores, errores, regiones. | Script contra `127.0.0.1:7879` con el token del puente | Loopback | No |
 | Gateway MCP | Una tool real por stdio. Fase 0: las 18 tools REST contra un TShock falso. | `python3 tests/e2e/mcp_stdio_smoke.py` | TShock falso en puerto efímero | Sí |
-| Gateway MCP del puente | `events_since`, `regions_list` y `region_info` por stdio contra un puente falso. | `python3 tests/e2e/mcp_stdio_smoke.py` | Puente falso en puerto efímero | Sí |
+| Gateway MCP del puente | Las 5 tools del puente por stdio contra un puente falso, incluida la confirmación por elicitation. | `python3 tests/e2e/mcp_stdio_smoke.py` | Puente falso en puerto efímero | Sí |
 | Servidor real | Integración completa: TShock, plugin, gateway y cliente MCP. | Cliente MCP con secretos desde archivo | LAN o loopback | Sí, cuando la feature toca TShock |
 
 ## Comandos
@@ -33,7 +33,7 @@ dotnet test -c Release --no-build
 python3 tests/e2e/mcp_stdio_smoke.py
 ```
 
-Resultado esperado hoy: 0 advertencias, 186 pruebas superadas y `E2E PASSED` con 36 comprobaciones.
+Resultado esperado hoy: 0 advertencias, 212 pruebas superadas y `E2E PASSED` con 52 comprobaciones.
 
 ### Plugin del puente
 
@@ -60,9 +60,14 @@ Existe para las tools del puente y forma parte de `tests/e2e/mcp_stdio_smoke.py`
 3. Completa el handshake MCP por stdio.
 4. Invoca `events_since` con y sin cursor, con el límite máximo y con argumentos inválidos; invoca
    `regions_list` y `region_info` con un nombre existente, uno inexistente y uno vacío.
-5. Verifica el sobre, la exclusividad del cursor, `hasMore`, `cursor_expired` con `details`,
-   `region_not_found`, que los argumentos inválidos no llegan al puente y que el token no aparece en
-   `stderr`.
+5. Con escritura habilitada: crea una región, repite el nombre, pide un propietario no permitido,
+   borra con y sin confirmación y vuelve a borrar.
+6. Se declara como cliente con capacidad de elicitation y responde a la pregunta del servidor:
+   rechazarla deja la región, aceptarla la borra.
+7. Verifica el sobre, la exclusividad del cursor, `hasMore`, `cursor_expired` con `details`,
+   `region_not_found`, `region_exists`, `owner_not_allowed`, `confirmation_required`,
+   `confirmation_declined`, que los argumentos inválidos no llegan al puente y que el token no
+   aparece en `stderr`.
 6. Apaga el puente y comprueba que `events_since` degrada a `bridge_unavailable` mientras las tools
    REST siguen funcionando.
 
@@ -88,7 +93,8 @@ puente solo por haberla probado con `curl`.
 - [ ] La llamada pasa por `BridgeClient`, no por un `HttpClient` ad hoc.
 - [ ] El token del puente no se registra ni se devuelve.
 - [ ] Los errores se traducen a códigos estables (`bridge_unavailable`, `bridge_timeout`,
-      `bridge_auth_error`, `bridge_error`, `cursor_expired`, `region_not_found`).
+      `bridge_auth_error`, `bridge_error`, `cursor_expired`, `region_not_found`, `region_exists`,
+      `owner_not_allowed`, `confirmation_required`, `confirmation_declined`).
 - [ ] Si escribe, comprueba `TSHOCK_MCP_ALLOW_WRITE`; las operaciones destructivas exigen
       confirmación.
 - [ ] Está documentada en `docs/tools.md`, `docs/bridge.md` y el `README.md`.
@@ -115,7 +121,8 @@ puente solo por haberla probado con `curl`.
 | Eventos del puente | Sí (`EventBuffer`) | Verificado manualmente | No existe tool | Parcial: región, entrada y comando |
 | `BridgeClient` | Sí (falso HTTP) | No aplica | Sí | No |
 | `events_since` | Sí (validación) | No aplica | Sí: backlog, cursor, 410, argumentos y degradación | Parcial: eventos reales capturados por MCP |
-| `regions_list`, `region_info` | Sí (validación) | No aplica | Sí: lista, detalle, 404 y argumentos | Pendiente |
+| `regions_list`, `region_info` | Sí (validación) | No aplica | Sí: lista, detalle, 404 y argumentos | Parcial: lectura verificada por MCP |
+| `region_create`, `region_delete` | Sí (política y confirmación) | No aplica | Sí: escritura, duplicado, propietario, confirmación y elicitation | Pendiente |
 | Tools de región | No existen | No aplica | No existen | No |
 
 Esta tabla debe actualizarse en el mismo cambio que la funcionalidad. Si una fila dice «No existe»,

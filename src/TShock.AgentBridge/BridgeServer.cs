@@ -45,7 +45,7 @@ internal sealed class BridgeServer : IDisposable
         _port = port;
         _token = Encoding.UTF8.GetBytes(token);
         _dispatcher = dispatcher;
-        _regions = new RegionService(dispatcher);
+        _regions = new RegionService(dispatcher, RegionOwnerPolicy.FromEnvironment());
         _events = events;
         _listener.Prefixes.Add($"http://*:{port}/");
     }
@@ -243,6 +243,7 @@ internal sealed class BridgeServer : IDisposable
     private static int StatusForRegionError(string error) => error switch
     {
         "name_required" or "invalid_size" or "invalid_position" or "out_of_bounds" or "invalid_json" => 400,
+        "owner_not_allowed" => 403,
         "region_not_found" => 404,
         "region_exists" => 409,
         _ => 500

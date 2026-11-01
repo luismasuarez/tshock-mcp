@@ -7,12 +7,12 @@ sigue siendo el único proceso que habla MCP.
 > **Estado.** Regiones (`GET`, `GET` por nombre, `POST`, `DELETE`) y eventos con cursor
 > (`GET /v1/events`) están implementados y verificados contra TShock 6.2.1.0. El gateway consume
 > `GET /v1/events`, `GET /v1/regions` y `GET /v1/regions/{name}` con `events_since`, `regions_list` y
-> `region_info`. La escritura de regiones, el descubrimiento de comandos y la ejecución con allowlist
-> todavía no existen.
+> `region_info`; `POST /v1/regions` y `DELETE /v1/regions/{name}` con `region_create` y
+> `region_delete`. El descubrimiento de comandos y la ejecución con allowlist todavía no existen.
 >
-> **Este documento describe la capa HTTP del plugin.** Las rutas invocables hoy por el agente son
-> `/v1/events`, `/v1/regions` y `/v1/regions/{name}`, a través de sus tres tools; el resto sigue
-> siendo capa inferior hasta que exista la suya. Las pruebas por `curl` no son la aceptación MCP;
+> **Este documento describe la capa HTTP del plugin.** Todas las rutas de eventos y regiones son
+> invocables por el agente a través de sus cinco tools; solo las de comandos siguen siendo capa
+> inferior. Las pruebas por `curl` no son la aceptación MCP;
 > consulte [`testing.md`](testing.md).
 
 ## Despliegue
@@ -241,9 +241,30 @@ Las rutas de regiones ejecutan toda la lógica en el hilo del juego a través de
   `RegionManager.ListAllRegions`, que devuelve objetos incompletos.
 - `GET /v1/regions/{name}` devuelve el registro completo o `404`.
 - `POST /v1/regions` acepta `name`, `x`, `y`, `width`, `height` y `owner` opcional. Valida tamaño,
-  posición y límites del mundo.
+  posición, límites del mundo y **la política de propietario** (ver abajo). Responde `201` con la
+  región creada, `400` (`name_required`, `invalid_size`, `invalid_position`, `out_of_bounds`,
+  `invalid_json`), `403` (`owner_not_allowed`) o `409` (`region_exists`).
 - `DELETE /v1/regions/{name}` comprueba primero que la región exista, porque
-  `RegionManager.DeleteRegion` devuelve `true` aunque no haya fila.
+  `RegionManager.DeleteRegion` devuelve `true` aunque no haya fila. Responde `204` sin cuerpo cuando
+  borra y `404` (`region_not_found`) cuando no existe.
+
+### Política de propietario
+
+El admin del servidor decide quién puede ser dueño de una región. El plugin lee dos variables:
+
+| Variable | Default | Efecto |
+| --- | --- | --- |
+| `TSHOCK_BRIDGE_REGION_OWNER` | `mcp-gateway` | Propietario usado cuando la petición no pide otro |
+| `TSHOCK_BRIDGE_REGION_OWNERS` | vacío | Nombres que el admin permite asignar, separados por coma o punto y coma. Comparación sin distinguir mayúsculas |
+
+Reglas:
+
+- Un `owner` fuera de la lista permitida devuelve `403 owner_not_allowed` y **no** crea la región.
+- Entradas inválidas (vacías, de más de 64 caracteres o con caracteres de control) se ignoran: un
+  nombre mal escrito no impide arrancar el servidor.
+- La política se aplica en el plugin, así que cubre a cualquier cliente del puente, no solo al
+  gateway MCP. Un `mcp-gateway` inexistente como cuenta es intencional: marca la procedencia y no
+  concede permisos a ningún jugador.
 
 Los nombres de región se decodifican con `Uri.UnescapeDataString`.
 
@@ -264,8 +285,7 @@ cambio de serialización puede devolver PascalCase al gateway sin que nada falle
 - `GET /v1/commands` y la allowlist de ejecución.
 - `POST /v1/commands/execute`.
 - `GET /v1/config`.
-- La escritura de regiones (`region_create`, `region_delete`) y las tools de comandos
-  (`commands_list`, `config_get`, `run_command`). `events_since`, `regions_list` y `region_info` ya
+- Las tools de comandos (`commands_list`, `config_get`, `run_command`). Las de eventos y regiones ya
   existen.
 - Notificaciones push o streaming. El cliente consulta con su cursor.
 - Persistencia de eventos entre reinicios.

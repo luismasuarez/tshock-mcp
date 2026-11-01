@@ -105,19 +105,32 @@ public sealed class BridgeClientTests
         Assert.Equal(0, handler.CallCount);
     }
 
-    [Theory]
-    [InlineData(HttpStatusCode.Unauthorized)]
-    [InlineData(HttpStatusCode.Forbidden)]
-    public async Task GetAsync_MapsAuthenticationFailures(HttpStatusCode statusCode)
+    [Fact]
+    public async Task GetAsync_MapsAuthenticationFailureToBridgeAuthError()
     {
-        var handler = Respond("""{"error":"unauthorized"}""", statusCode);
+        var handler = Respond("""{"error":"unauthorized"}""", HttpStatusCode.Unauthorized);
 
         var result = await GetAsync(handler);
 
         Assert.False(result.Ok);
         Assert.Equal("bridge_auth_error", result.ErrorCode);
-        Assert.Equal((int)statusCode, result.StatusCode);
+        Assert.Equal(401, result.StatusCode);
         Assert.DoesNotContain(TestOptions.BridgeToken, result.ErrorMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GetAsync_KeepsA403AsABridgeErrorWithItsDiscriminator()
+    {
+        // 403 is a policy answer from the bridge (owner_not_allowed), not an auth
+        // failure: the tool must be able to map it.
+        var handler = Respond("""{"error":"owner_not_allowed"}""", HttpStatusCode.Forbidden);
+
+        var result = await GetAsync(handler);
+
+        Assert.False(result.Ok);
+        Assert.Equal("bridge_error", result.ErrorCode);
+        Assert.Equal(403, result.StatusCode);
+        Assert.Equal("owner_not_allowed", result.BridgeError);
     }
 
     [Fact]

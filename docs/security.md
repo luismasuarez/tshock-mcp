@@ -205,10 +205,20 @@ TShock. Es una superficie **local**, no un segundo servidor público.
 - **Lecturas fuera del hilo del juego.** Las lecturas de eventos no tocan el mundo. Las mutaciones de
   región pasan por `MainThreadDispatcher` con timeout de 5 s, así que una petición no bloquea el
   tick indefinidamente.
-- **Capa MCP pendiente.** El gateway todavía no consume el puente: ninguna tool MCP puede invocar
-  estas rutas. Cuando se agreguen, toda tool de escritura deberá comprobar
-  `TSHOCK_MCP_ALLOW_WRITE=true`, `region_delete` exigirá confirmación y el token del puente se
-  inyectará al gateway como un secreto más, nunca en la configuración versionada.
+- **Tools MCP del puente.** `events_since`, `regions_list` y `region_info` son de solo lectura. La
+  escritura (`region_create`, `region_delete`) comprueba `TSHOCK_MCP_ALLOW_WRITE=true` en runtime y,
+  sin él, devuelve `write_disabled` sin tocar la red.
+- **Confirmación del borrado.** `region_delete` pide confirmación al humano mediante *elicitation*
+  cuando el cliente la declara; solo si no la declara acepta el argumento `confirm: true`. El modelo
+  no puede elegir el camino débil cuando el fuerte está disponible. Aun así, `confirm: true` es una
+  barrera de intención, no de seguridad: la barrera de seguridad es el flag de escritura y el token.
+- **Propietario de la región.** La política vive en el plugin, no en el modelo: `TSHOCK_BRIDGE_REGION_OWNER`
+  fija el propietario por defecto y `TSHOCK_BRIDGE_REGION_OWNERS` es la lista de nombres que el admin
+  permite asignar. Un `owner` fuera de esa lista devuelve `owner_not_allowed` (403) y no crea nada.
+  Esto evita que un modelo regale control de una zona a un nombre alucinado y permite que cada
+  servidor aplique sus propias reglas.
+- **El token del puente es administrativo.** Quien lo tenga puede crear y borrar regiones sin pasar
+  por las tools. Montarlo como archivo `600` y publicar el puerto solo en `127.0.0.1` no es opcional.
 
 ## Redacción de IP
 

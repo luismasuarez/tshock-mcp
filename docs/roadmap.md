@@ -25,11 +25,11 @@ detalles de entorno que no son evidentes desde el código.
 | Configuración | Solo variables de entorno, validación estricta al arrancar |
 | Seguridad | Escritura desactivada por defecto, token nunca registrado, IP y credenciales redactadas |
 | Contrato de salida | Sobre JSON estable `ok` / `error` |
-| Pruebas | 186 pruebas xUnit (161 del gateway y 25 del puente) y 36 comprobaciones e2e por stdio |
+| Pruebas | 212 pruebas xUnit (181 del gateway y 31 del puente) y 52 comprobaciones e2e por stdio |
 | Verificación real | Lectura, escritura, errores y redacción probados con un cliente de Terraria en la LAN |
 | Privilegio mínimo | Grupo dedicado `mcp-rest` sin permisos de escritura; la escritura tiene dos barreras (flag del gateway y permisos de TShock) |
 | Distribución | Dockerfile multi-stage y workflow de CI |
-| Puente Fase 1 | Plugin `TShock.AgentBridge` cargado en TShock 6.2.1.0; regiones y eventos con cursor verificados por HTTP. `events_since`, `regions_list` y `region_info` implementados; escritura de regiones y comandos pendientes |
+| Puente Fase 1 | Plugin `TShock.AgentBridge` cargado en TShock 6.2.1.0; regiones y eventos con cursor verificados por HTTP. `events_since`, `regions_list`, `region_info`, `region_create` y `region_delete` implementados; comandos pendientes |
 
 ### Estado por capas de la Fase 1
 
@@ -42,7 +42,8 @@ puente, así que regiones y eventos **no** están disponibles desde el cliente M
 | `BridgeClient` en el gateway | Implementado | Unitarias con HTTP falso y e2e |
 | Tool `events_since` | Implementada | E2E MCP por stdio con puente falso |
 | Tools de región de lectura | Implementadas | Unitarias y E2E con puente falso |
-| Tools de región de escritura | No existen | — |
+| Tools de región de escritura | Implementadas | Unitarias, E2E con confirmación y elicitación |
+| Política de propietario | Implementada en el plugin | Unitarias del puente |
 | E2E MCP del puente | Existe para `events_since` | `mcp_stdio_smoke.py` con puente falso |
 | Verificación real del plugin | Parcial: región, `player.join` y `command` | HTTP directo; faltan chat, muerte, jefe y salida |
 
@@ -67,8 +68,8 @@ dotnet test -c Release --no-build
 python3 tests/e2e/mcp_stdio_smoke.py
 ```
 
-Resultados esperados: 0 advertencias, 186 pruebas superadas y `E2E PASSED` con 36 comprobaciones.
-La prueba e2e cubre las 18 tools REST de la Fase 0 y las 3 tools del puente contra un puente falso.
+Resultados esperados: 0 advertencias, 212 pruebas superadas y `E2E PASSED` con 52 comprobaciones.
+La prueba e2e cubre las 18 tools REST de la Fase 0 y las 5 tools del puente contra un puente falso.
 
 ---
 
@@ -322,7 +323,8 @@ log. La comprobación de que el pump de respaldo queda inactivo es el propio con
 - [x] Añadir `BridgeClient` y `BridgeTools` al gateway; empezar por `events_since`.
 - [x] Añadir la prueba MCP por stdio del puente (`events_since`) con un puente falso.
 - [x] Añadir las tools de región de lectura (`regions_list`, `region_info`).
-- [ ] **Siguiente:** añadir la escritura de regiones, con política de propietario y confirmación al borrar.
+- [x] Añadir la escritura de regiones, con política de propietario en el plugin y confirmación al borrar.
+- [ ] **Siguiente:** añadir `CommandCatalog` y `GET /v1/commands`.
 - [ ] Añadir `CommandCatalog` y `/v1/commands`.
 - [ ] Probar en un servidor TShock real la recarga, la desconexión del bridge y la concurrencia de
       eventos con jugadores conectados.
@@ -332,9 +334,9 @@ log. La comprobación de que el pump de respaldo queda inactivo es el propio con
 
 | Criterio | Estado |
 | --- | --- |
-| La suite de Fase 0 sigue en verde sin cambios de contrato. | Hecho: 186 pruebas y 36 checks e2e. |
+| La suite de Fase 0 sigue en verde sin cambios de contrato. | Hecho: 212 pruebas y 52 checks e2e. |
 | El plugin carga en TShock 6.2.1 y se descarga sin dejar hilos ni puertos abiertos. | Hecho para la carga; la descarga en caliente no existe. |
-| Crear y eliminar una región desde MCP se refleja en el servidor. | Pendiente: la lectura ya está; la escritura solo existe en la ruta HTTP del plugin. |
+| Crear y eliminar una región desde MCP se refleja en el servidor. | Hecho con puente falso (incluida la confirmación); verificación real pendiente. |
 | `events_since` devuelve eventos ordenados y estables entre reconexiones. | Hecho con puente falso (unitarias y e2e); falta la verificación con jugadores reales. |
 | Un bridge caído no impide usar las tools REST. | Hecho y probado en la e2e: `bridge_unavailable` sin afectar a REST. |
 | Ninguna mutación se ejecuta fuera del hilo principal. | Hecho en las rutas de región del plugin. |
@@ -474,7 +476,7 @@ src/TShock.MCP.Server/
   TShock/BridgeClient.cs         Cliente HTTP del puente y códigos de error
   Tools/ReadTools.cs             12 tools de lectura
   Tools/WriteTools.cs            6 tools de escritura
-  Tools/BridgeTools.cs           3 tools del puente (eventos y lectura de regiones)
+  Tools/BridgeTools.cs           5 tools del puente (eventos, regiones y escritura)
 src/TShock.AgentBridge/          Plugin de Fase 1 (net9.0)
   AgentBridgePlugin.cs           Arranque, hooks de ciclo de vida
   BridgeServer.cs                HTTP loopback, auth y rutas
@@ -482,8 +484,9 @@ src/TShock.AgentBridge/          Plugin de Fase 1 (net9.0)
   RegionService.cs               Regiones
   EventBuffer.cs                 Ring buffer y contrato de cursor
   EventService.cs                Suscripción a hooks y publicación
+  RegionOwnerPolicy.cs           Política de propietario configurada por el admin
 tests/
-  TShock.MCP.Server.Tests/       Suite xUnit del gateway (161)
+  TShock.MCP.Server.Tests/       Suite xUnit del gateway (181)
   TShock.AgentBridge.Tests/      Suite xUnit del puente (25)
   e2e/mcp_stdio_smoke.py         Prueba de extremo a extremo
 docs/                            Arquitectura, bridge, tools, testing, seguridad, roadmap
@@ -676,6 +679,40 @@ Verificado contra el servidor real **por MCP**, con el binario real y los secret
 - Ya capturados: `player.join`, `chat`, `command`, `boss.kill` (King Slime, `netId` 50) y
   `player.leave`. Falta `player.death`.
 - El token del puente no aparece en `stderr`.
+
+### Continuación: escritura de regiones y confirmación (1 de noviembre de 2026)
+
+- `region_create` y `region_delete` en el gateway, con `write_disabled` en runtime y validación antes
+  de la red.
+- `BridgeClient` gana `PostAsync`/`DeleteAsync` sobre un único `SendCoreAsync`; un `204` con cuerpo
+  vacío es éxito y un `403` ya no se confunde con un fallo de token (solo el `401` lo es).
+- **Confirmación por elicitation.** `region_delete` usa `InputRequiredException` con
+  `InputResponse`/`ElicitResult`. El SDK la convierte en `elicitation/create` en sesiones con estado y
+  en un *input-required result* en el modo sin estado, así que una sola implementación cubre ambos
+  protocolos. El filtro de `Program.cs` reenvía `InputRequiredException` en lugar de convertirla en
+  `unexpected_error`.
+- **Capacidades por petición.** La comprobación es `server.IsMrtrSupported &&
+  server.ClientCapabilities?.Elicitation is not null`. Leerlas de `context.JsonRpcRequest.Context`
+  no funciona en protocolos anteriores a 2026-07-28, donde viven en la sesión.
+- **Política de propietario en el plugin** (`RegionOwnerPolicy`): `TSHOCK_BRIDGE_REGION_OWNER` y
+  `TSHOCK_BRIDGE_REGION_OWNERS`. El admin decide a quién se le puede asignar una región; el modelo no.
+- Códigos nuevos: `region_exists` (409), `owner_not_allowed` (403), `confirmation_required`,
+  `confirmation_declined`.
+- 26 pruebas nuevas en el gateway (181) y 6 en el puente (31); la e2e sube a 52 comprobaciones,
+  incluida la elicitación aceptada y rechazada de extremo a extremo.
+- `InternalsVisibleTo` en el proyecto del gateway para probar decisiones puras, igual que ya hacía el
+  proyecto del puente.
+
+Trampas de esta sesión:
+
+- `McpServer` es también el nombre del espacio de nombres raíz del gateway (`TShock.McpServer`): en
+  `Tools/` hay que escribir `ModelContextProtocol.Server.McpServer`.
+- El cliente declara elicitation en `initialize` para protocolos anteriores a 2026-07-28; pedir la
+  capacidad en el `_meta` de la petición es solo para el protocolo nuevo.
+- Un `403` del puente es política (`owner_not_allowed`), no autenticación: mapearlo a
+  `bridge_auth_error` esconde información que el agente necesita.
+- `InputRequiredException` debe reenviarse desde el filtro de errores; si el filtro la captura, el
+  humano nunca ve la pregunta.
 
 ### No objetivos
 

@@ -36,11 +36,35 @@ public sealed class BridgeClient : IBridgeClient
     public bool IsConfigured => _options.Bridge is not null;
 
     /// <inheritdoc />
-    public async Task<BridgeResult> GetAsync(
+    public Task<BridgeResult> GetAsync(
         string operation,
         string path,
         IReadOnlyDictionary<string, string?>? query = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        SendAsync(HttpMethod.Get, operation, path, query, null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<BridgeResult> PostAsync(
+        string operation,
+        string path,
+        JsonNode? body,
+        CancellationToken cancellationToken = default) =>
+        SendAsync(HttpMethod.Post, operation, path, null, body, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<BridgeResult> DeleteAsync(
+        string operation,
+        string path,
+        CancellationToken cancellationToken = default) =>
+        SendAsync(HttpMethod.Delete, operation, path, null, null, cancellationToken);
+
+    private async Task<BridgeResult> SendAsync(
+        HttpMethod method,
+        string operation,
+        string path,
+        IReadOnlyDictionary<string, string?>? query,
+        JsonNode? payload,
+        CancellationToken cancellationToken)
     {
         var auditPath = HttpPayload.StripQuery(path);
         var stopwatch = Stopwatch.StartNew();
@@ -62,7 +86,7 @@ public sealed class BridgeClient : IBridgeClient
         {
             try
             {
-                result = await SendAsync(bridge, BuildUri(bridge, path, query), cancellationToken)
+                result = await SendCoreAsync(bridge, method, BuildUri(bridge, path, query), payload, cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -79,7 +103,8 @@ public sealed class BridgeClient : IBridgeClient
         if (result.Ok)
         {
             _logger.LogDebug(
-                "Bridge {Operation} GET {Path} succeeded with HTTP {StatusCode} in {ElapsedMs} ms.",
+                "Bridge {Operation} {Method} {Path} succeeded with HTTP {StatusCode} in {ElapsedMs} ms.",
+                method.Method,
                 operation,
                 auditPath,
                 result.StatusCode,
@@ -88,7 +113,8 @@ public sealed class BridgeClient : IBridgeClient
         else
         {
             _logger.LogWarning(
-                "Bridge {Operation} GET {Path} failed with {ErrorCode} (HTTP {StatusCode}) in {ElapsedMs} ms.",
+                "Bridge {Operation} {Method} {Path} failed with {ErrorCode} (HTTP {StatusCode}) in {ElapsedMs} ms.",
+                method.Method,
                 operation,
                 auditPath,
                 result.ErrorCode,
@@ -133,13 +159,22 @@ public sealed class BridgeClient : IBridgeClient
         return new Uri(builder.ToString(), UriKind.Absolute);
     }
 
-    private async Task<BridgeResult> SendAsync(
+    private async Task<BridgeResult> SendCoreAsync(
         BridgeOptions bridge,
+        HttpMethod method,
         Uri uri,
+        JsonNode? payload,
         CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        using var request = new HttpRequestMessage(method, uri);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bridge.Token);
+        if (payload is not null)
+        {
+            request.Content = new StringContent(
+                payload.ToJsonString(),
+                System.Text.Encoding.UTF8,
+                "application/json");
+        }
 
         using var response = await _http
             .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
@@ -166,12 +201,12 @@ public sealed class BridgeClient : IBridgeClient
         }
 
         JsonNode? node = null;
-        var payload = body.Trim();
-        if (payload.Length > 0)
+        var text = body.Trim();
+        if (text.Length > 0)
         {
             try
             {
-                node = JsonNode.Parse(payload);
+                node = JsonNode.Parse(text);
                 HttpPayload.ValidateNoDuplicateKeys(node);
             }
             catch (Exception ex) when (ex is JsonException or ArgumentException)
@@ -188,7 +223,10 @@ public sealed class BridgeClient : IBridgeClient
             return MapCursorExpired(node);
         }
 
-        if (statusCode is (int)HttpStatusCode.Unauthorized or (int)HttpStatusCode.Forbidden)
+        // Only 401 means the bearer token was rejected. A 403 is a policy answer
+        // from the bridge (for example owner_not_allowed) and must reach the tool
+        // intact, so it is not collapsed into bridge_auth_error.
+        if (statusCode == (int)HttpStatusCode.Unauthorized)
         {
             return BridgeResult.Failure(
                 "bridge_auth_error",
@@ -198,15 +236,20 @@ public sealed class BridgeClient : IBridgeClient
 
         if (statusCode is < 200 or >= 300)
         {
-            return BridgeResult.Failure("bridge_error", DescribeError(statusCode, node), statusCode);
+            return BridgeResult.Failure("bridge_error", DescribeError(statusCode, node), statusCode)
+                with
+                { BridgeError = ReadBridgeError(node) };
         }
 
+        // A successful DELETE answers 204 with no body.
         if (node is null)
         {
-            return BridgeResult.Failure(
-                "invalid_response",
-                $"The bridge returned HTTP {statusCode} with an empty body.",
-                statusCode);
+            return statusCode == (int)HttpStatusCode.NoContent
+                ? BridgeResult.Success(statusCode, null)
+                : BridgeResult.Failure(
+                    "invalid_response",
+                    $"The bridge returned HTTP {statusCode} with an empty body.",
+                    statusCode);
         }
 
         return BridgeResult.Success(statusCode, node);
@@ -247,6 +290,9 @@ public sealed class BridgeClient : IBridgeClient
 
         return $"The bridge returned HTTP {statusCode}.";
     }
+
+    private static string? ReadBridgeError(JsonNode? node) =>
+        node is JsonObject jsonObject ? ReadString(jsonObject["error"]) : null;
 
     private static string? ReadString(JsonNode? node) =>
         node is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;

@@ -6,7 +6,7 @@ mutaciones.
 
 La Fase 1 agrega de forma aditiva **herramientas del puente** que hablan con el plugin
 `TShock.AgentBridge` por HTTP en loopback. Hoy existe una, `events_since`, así que el catálogo total
-es de **21 herramientas**. Las 18 de la Fase 0 conservan su nombre, sus rutas y su semántica.
+es de **23 herramientas**. Las 18 de la Fase 0 conservan su nombre, sus rutas y su semántica.
 
 Convenciones de la tabla:
 
@@ -238,6 +238,8 @@ loopback, con un token propio distinto del token REST. Su contrato HTTP está en
 | `events_since` | Eventos del servidor posteriores a un cursor **exclusivo**: entradas, salidas, chat, comandos, muertes, jefes y cambios de región. | `GET /v1/events` | `cursor` (opcional, entero `>= 0`), `limit` (opcional, 1–500, 100 por defecto) | Ninguno. Solo lectura |
 | `regions_list` | Regiones del mundo actual con área, propietario, protección y listas de usuarios y grupos permitidos. | `GET /v1/regions` | — | Ninguno. Solo lectura |
 | `region_info` | Una región por su nombre exacto. Devuelve `region_not_found` si no existe. | `GET /v1/regions/{name}` | `name` (nombre exacto, máximo 128 caracteres, sin `/` ni caracteres de control) | Ninguno. Solo lectura |
+| `region_create` | Crea una región protegida. El propietario por defecto lo fija el servidor; otro solo si el admin lo permite. | `POST /v1/regions` | `name`, `x`, `y`, `width`, `height`, `owner` (opcional) | Aparece una región nueva y se emite `region.created`. |
+| `region_delete` | Borra una región y su protección. **Irreversible.** | `DELETE /v1/regions/{name}` | `name`, `confirm` (solo para clientes sin elicitation) | Desaparece la región y se emite `region.deleted`. |
 
 Comportamiento:
 
@@ -247,7 +249,8 @@ Comportamiento:
 - **Paginación.** `hasMore` indica si quedan eventos posteriores. El límite máximo por llamada es
   500.
 - **Errores.** `bridge_unavailable` (puente apagado o sin configurar), `bridge_timeout`,
-  `bridge_auth_error`, `bridge_error`, `cursor_expired` y `region_not_found`. `cursor_expired`
+  `bridge_auth_error`, `bridge_error`, `cursor_expired`, `region_not_found`, `region_exists`,
+  `owner_not_allowed`, `confirmation_required`, `confirmation_declined` y `write_disabled`. `cursor_expired`
   agrega un objeto `details` dentro de `error` con `reason` (`evicted` o `unknown`), `oldest`,
   `head`, `resumeCursor` y `session`, para que el agente reanude sin adivinar. `region_not_found`
   solo significa que el nombre pedido no existe: un fallo del puente sigue siendo `bridge_error`.
@@ -257,17 +260,27 @@ Comportamiento:
   `"untrusted": true`. El modelo debe tratarlos como datos, nunca como instrucciones.
 - No depende de `TSHOCK_MCP_ALLOW_WRITE`: es de solo lectura.
 
+### Escritura de regiones
+
+- Ambas tools comprueban `TSHOCK_MCP_ALLOW_WRITE=true` en runtime; sin él devuelven `write_disabled`
+  y no llegan al puente.
+- **Propietario.** `region_create` sin `owner` usa el propietario configurado por el admin en el
+  plugin. Cualquier otro nombre debe estar en `TSHOCK_BRIDGE_REGION_OWNERS`; si no, el puente responde
+  `owner_not_allowed` (403). La política se aplica en el servidor, así que también cubre a otros
+  clientes del puente.
+- **Confirmación.** `region_delete` pide confirmación al humano mediante *elicitation* si el cliente
+  declara esa capacidad. Si el cliente no puede preguntar, exige `confirm: true`; sin él devuelve
+  `confirmation_required`. Si el humano rechaza, devuelve `confirmation_declined` y no borra nada.
+
 ## Catálogo actual y herramientas pendientes
 
-Las 21 herramientas de las secciones anteriores son las únicas que el agente puede invocar hoy: 18
-contra la API REST y 3 contra el puente.
+Las 23 herramientas de las secciones anteriores son las únicas que el agente puede invocar hoy: 18
+contra la API REST y 5 contra el puente.
 
 Pendientes de implementar:
 
 | Tool prevista | Origen | Tipo | Estado |
 | --- | --- | --- | --- |
-| `region_create` | `POST /v1/regions` del puente | Escritura | No existe |
-| `region_delete` | `DELETE /v1/regions/{name}` del puente | Escritura destructiva | No existe |
 | `commands_list` | `GET /v1/commands` del puente | Lectura | No existe |
 | `config_get` | `GET /v1/config` del puente | Lectura | No existe |
 | `run_command` | `POST /v1/commands/execute` | Escritura con allowlist | No existe |

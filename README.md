@@ -15,7 +15,7 @@ herramientas de solo lectura y de escritura acotadas, con escritura deshabilitad
 | Fase | Alcance | Estado |
 | --- | --- | --- |
 | Fase 0 | Transporte stdio, 18 herramientas, configuración por variables de entorno, sin cambios en TShock | **Implementada y verificada** |
-| Fase 1 | Puente (*bridge*) con TShock: regiones, eventos y descubrimiento de comandos | **En curso:** plugin con regiones y eventos; eventos y lectura de regiones disponibles; escritura de regiones y comandos pendientes |
+| Fase 1 | Puente (*bridge*) con TShock: regiones, eventos y descubrimiento de comandos | **En curso:** eventos y regiones (lectura y escritura) disponibles; descubrimiento de comandos pendiente |
 | Fase 2 | Transporte HTTP y OAuth 2.1 para despliegues remotos | Futura, no implementada |
 
 La Fase 0 está verificada contra un servidor real (TShock 6.2.1.0, Terraria 1.4.5.8) con un cliente
@@ -23,13 +23,13 @@ en la LAN: lectura, las 6 herramientas de escritura, mapeo de errores y redacci�
 sentidos. El procedimiento reproducible está en [`docs/local-testing.md`](docs/local-testing.md).
 
 La Fase 1 ya tiene un plugin (`TShock.AgentBridge`) que carga en TShock y expone regiones y eventos
-por HTTP en loopback. El gateway consume ese puente con `events_since`, `regions_list` y
-`region_info`: un agente puede leer los eventos del servidor con un cursor y consultar las regiones
-del mundo. La escritura de regiones y el descubrimiento de comandos todavía no existen. El contrato
-del puente está en [`docs/bridge.md`](docs/bridge.md).
+por HTTP en loopback. El gateway consume ese puente con cinco herramientas: eventos con cursor,
+lectura de regiones y creación o borrado de regiones con escritura habilitada, confirmación del
+humano y política de propietario configurada por el admin. El descubrimiento de comandos todavía no
+existe. El contrato del puente está en [`docs/bridge.md`](docs/bridge.md).
 
-**No** existen hoy soporte HTTP, OAuth, herramientas MCP para crear o borrar regiones, descubrimiento
-de comandos ni ejecución de comandos arbitrarios.
+**No** existen hoy soporte HTTP, OAuth, descubrimiento de comandos ni ejecución de comandos
+arbitrarios.
 
 ## Arquitectura
 
@@ -248,6 +248,9 @@ con `--network host` use `http://127.0.0.1:7878` y omita la variable de inseguri
 | `TSHOCK_BRIDGE_TOKEN_FILE` | *(sin definir)* | Archivo con el token del puente, preferido sobre la variable en línea para no exponerlo en `docker inspect` o `ps`. |
 | `TSHOCK_BRIDGE_TIMEOUT_SECONDS` | `10` | Tiempo máximo de espera del puente, entre 1 y 300. |
 
+El plugin tiene su propia configuración (`TSHOCK_BRIDGE_PORT`, `TSHOCK_BRIDGE_REGION_OWNER`,
+`TSHOCK_BRIDGE_REGION_OWNERS`); está documentada en [`docs/bridge.md`](docs/bridge.md).
+
 La configuración es exclusivamente por variables de entorno: no hay archivos de configuración ni
 argumentos de línea de comandos. La validación ocurre al arrancar y es estricta: una URL no absoluta,
 con consulta, fragmento o credenciales embebidas, un token ausente, un timeout no numérico o fuera
@@ -291,13 +294,14 @@ Puente (Fase 1), solo lectura, con el plugin `TShock.AgentBridge`:
 | `events_since` | Eventos del servidor posteriores a un cursor exclusivo: entradas, salidas, chat, comandos, muertes, jefes y cambios de región. Devuelve el cursor para la siguiente llamada. |
 | `regions_list` | Regiones del mundo actual con área, propietario y permisos. |
 | `region_info` | Una región por nombre exacto; `region_not_found` si no existe. |
+| `region_create` | Crea una región protegida. Requiere escritura habilitada; el propietario lo decide la política del servidor. |
+| `region_delete` | Borra una región. Requiere escritura habilitada y confirmación del humano (o `confirm: true` si el cliente no puede preguntar). |
 
 Rutas, permisos, argumentos y ejemplos completos en [docs/tools.md](docs/tools.md).
 
-Estas 21 son las únicas herramientas MCP existentes: 18 REST y 3 del puente. La escritura de
-regiones (`region_create`, `region_delete`) y las herramientas de comandos (`commands_list`,
-`config_get`, `run_command`) todavía no existen; cuando se implementen, se agregarán a esta sección y
-a `docs/tools.md`.
+Estas 23 son las únicas herramientas MCP existentes: 18 REST y 5 del puente. Las herramientas de
+comandos (`commands_list`, `config_get`, `run_command`) todavía no existen; cuando se implementen, se
+agregarán a esta sección y a `docs/tools.md`.
 
 Toda herramienta devuelve una cadena JSON con un sobre estable:
 
@@ -331,7 +335,7 @@ Antes de habilitar escritura, revise [docs/security.md](docs/security.md).
 
 ## Pruebas
 
-Suite unitaria, sin red (186 pruebas: 161 del gateway y 25 del puente):
+Suite unitaria, sin red (212 pruebas: 181 del gateway y 31 del puente):
 
 ```bash
 dotnet test -c Release
@@ -347,10 +351,10 @@ python3 tests/e2e/mcp_stdio_smoke.py
 
 La prueba e2e requiere Python 3 y verifica el sobre de salida, la redacción de IP y credenciales, el
 bloqueo de escritura, el mapeo de un 403 de TShock, el cursor de `events_since` y la degradación a
-`bridge_unavailable` cuando el puente no responde (36 comprobaciones). Es multiplataforma: usa hilos
+`bridge_unavailable` cuando el puente no responde (52 comprobaciones). Es multiplataforma: usa hilos
 y una cola para leer la salida del proceso, sin depender de `select`.
 
-Cubre las 18 tools REST y las 3 herramientas del puente; la escritura de regiones todavía no existe. La matriz de capas
+Cubre las 18 tools REST y las 5 herramientas del puente, incluida la elicitation. La matriz de capas
 y la definición de terminado están en [docs/testing.md](docs/testing.md).
 
 ## Solución de problemas
@@ -378,7 +382,7 @@ Un token con permisos de escritura equivale a control operativo del servidor.
   y mapeo de errores.
 - [docs/bridge.md](docs/bridge.md): contrato del puente de Fase 1 (regiones y eventos con cursor).
 - [docs/testing.md](docs/testing.md): capas de prueba, comandos y definición de terminado.
-- [docs/tools.md](docs/tools.md): referencia completa de las 21 herramientas.
+- [docs/tools.md](docs/tools.md): referencia completa de las 23 herramientas.
 - [docs/security.md](docs/security.md): modelo de amenazas y guía para operadores.
 - [docs/roadmap.md](docs/roadmap.md): estado, decisiones, fases siguientes y contexto para retomar.
 - [docs/local-testing.md](docs/local-testing.md): guía paso a paso para probar con TShock y OpenCode.

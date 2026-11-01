@@ -30,11 +30,14 @@ internal sealed record RegionCreateRequest(
 /// </summary>
 internal sealed class RegionService
 {
-    private const string DefaultOwner = "mcp-gateway";
-
     private readonly MainThreadDispatcher _dispatcher;
+    private readonly RegionOwnerPolicy _owners;
 
-    public RegionService(MainThreadDispatcher dispatcher) => _dispatcher = dispatcher;
+    public RegionService(MainThreadDispatcher dispatcher, RegionOwnerPolicy owners)
+    {
+        _dispatcher = dispatcher;
+        _owners = owners;
+    }
 
     public Task<RegionDto[]> ListAsync() =>
         _dispatcher.InvokeAsync(() =>
@@ -73,7 +76,13 @@ internal sealed class RegionService
             return (null, "invalid_position");
         }
 
-        var owner = string.IsNullOrWhiteSpace(request.Owner) ? DefaultOwner : request.Owner.Trim();
+        // The admin decides who may own a region: the bridge never invents an
+        // owner that the server has not explicitly allowed.
+        var owner = string.IsNullOrWhiteSpace(request.Owner) ? _owners.DefaultOwner : request.Owner.Trim();
+        if (!_owners.IsAllowed(owner))
+        {
+            return (null, "owner_not_allowed");
+        }
 
         return await _dispatcher.InvokeAsync(() =>
         {

@@ -14,6 +14,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Mirrors the bridge project: unit tests exercise pure helpers (confirmation
+         decisions, result mapping) that must not be part of the public surface. -->
+    <InternalsVisibleTo Include="TShock.MCP.Server.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="ModelContextProtocol" Version="2.3.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.13" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.13" />

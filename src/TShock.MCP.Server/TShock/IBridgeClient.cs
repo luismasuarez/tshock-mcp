@@ -23,6 +23,18 @@ public interface IBridgeClient
         string path,
         IReadOnlyDictionary<string, string?>? query = null,
         CancellationToken cancellationToken = default);
+
+    /// <param name="body">JSON payload, or null for an empty request body.</param>
+    Task<BridgeResult> PostAsync(
+        string operation,
+        string path,
+        JsonNode? body,
+        CancellationToken cancellationToken = default);
+
+    Task<BridgeResult> DeleteAsync(
+        string operation,
+        string path,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>Normalized outcome of a single bridge call.</summary>
@@ -34,6 +46,13 @@ public sealed record BridgeResult(
     string? ErrorMessage,
     JsonNode? ErrorDetails)
 {
+    /// <summary>
+    /// The bridge's own error discriminator, for example <c>region_exists</c>.
+    /// It is metadata for the tool that maps errors; it is never serialized to
+    /// the agent unless that tool chooses to.
+    /// </summary>
+    public string? BridgeError { get; init; }
+
     public static BridgeResult Success(int statusCode, JsonNode? body) =>
         new(true, statusCode, body, null, null, null);
 

@@ -80,6 +80,14 @@ builder.Services
             // The client cancelled the call: let the SDK report it.
             throw;
         }
+        catch (InputRequiredException)
+        {
+            // Multi-round-trip request (for example region_delete confirmation).
+            // The SDK turns this exception into an input-required result and
+            // re-invokes the tool with the client's answer; swallowing it here
+            // would turn a confirmation prompt into a generic error.
+            throw;
+        }
         catch (Exception ex) when (ex is ArgumentException or JsonException or FormatException)
         {
             return CallToolErrors.InvalidArguments(CallToolErrors.ToolName(request));
