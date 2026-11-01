@@ -15,6 +15,7 @@ public sealed class AgentBridgePlugin : TerrariaPlugin
     private const string PluginVersion = "0.1.0";
 
     private MainThreadDispatcher? _dispatcher;
+    private EventService? _events;
     private BridgeServer? _server;
 
     public AgentBridgePlugin(Main game)
@@ -55,7 +56,8 @@ public sealed class AgentBridgePlugin : TerrariaPlugin
             _dispatcher = new MainThreadDispatcher();
             ServerApi.Hooks.GameUpdate.Register(this, OnGameUpdate);
 
-            _server = new BridgeServer(port, token, _dispatcher);
+            _events = new EventService(this);
+            _server = new BridgeServer(port, token, _dispatcher, _events);
             _server.Start();
 
             TShockAPI.TShock.Log.ConsoleInfo($"{Name} {PluginVersion}: listening on 0.0.0.0:{port}.");
@@ -106,6 +108,8 @@ public sealed class AgentBridgePlugin : TerrariaPlugin
             ServerApi.Hooks.GameUpdate.Deregister(this, OnGameUpdate);
             _server?.Dispose();
             _server = null;
+            _events?.Dispose();
+            _events = null;
             _dispatcher?.Dispose();
             _dispatcher = null;
         }

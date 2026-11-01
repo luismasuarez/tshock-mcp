@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -20,6 +21,7 @@ internal sealed class BridgeServer : IDisposable
     private readonly byte[] _token;
     private readonly MainThreadDispatcher _dispatcher;
     private readonly RegionService _regions;
+    private readonly EventService _events;
     private readonly CancellationTokenSource _cts = new();
     private readonly int _port;
     private Task? _acceptLoop;
@@ -27,12 +29,13 @@ internal sealed class BridgeServer : IDisposable
     private long _lastTicks = -1;
     private DateTime _lastTickChange = DateTime.UtcNow;
 
-    public BridgeServer(int port, string token, MainThreadDispatcher dispatcher)
+    public BridgeServer(int port, string token, MainThreadDispatcher dispatcher, EventService events)
     {
         _port = port;
         _token = Encoding.UTF8.GetBytes(token);
         _dispatcher = dispatcher;
         _regions = new RegionService(dispatcher);
+        _events = events;
         _listener.Prefixes.Add($"http://*:{port}/");
     }
 
@@ -115,6 +118,9 @@ internal sealed class BridgeServer : IDisposable
                     await WriteAsync(context, 200, new { world }).ConfigureAwait(false);
                     return;
                 }
+                case "/v1/events":
+                    await RouteEventsAsync(context).ConfigureAwait(false);
+                    return;
                 default:
                     if (IsRegionsPath(context.Request.Url?.AbsolutePath))
                     {
@@ -231,12 +237,77 @@ internal sealed class BridgeServer : IDisposable
         _ => 500
     };
 
+    private async Task RouteEventsAsync(HttpListenerContext context)
+    {
+        var request = context.Request;
+        if (request.HttpMethod != "GET")
+        {
+            await WriteAsync(context, 405, new { error = "method_not_allowed" }).ConfigureAwait(false);
+            return;
+        }
+
+        long? cursor = null;
+        var rawCursor = request.QueryString["cursor"];
+        if (!string.IsNullOrEmpty(rawCursor))
+        {
+            if (!long.TryParse(rawCursor, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+                || parsed < 0)
+            {
+                await WriteAsync(context, 400, new { error = "invalid_cursor" }).ConfigureAwait(false);
+                return;
+            }
+
+            cursor = parsed;
+        }
+
+        var limit = EventBuffer.DefaultPageSize;
+        var rawLimit = request.QueryString["limit"];
+        if (!string.IsNullOrEmpty(rawLimit))
+        {
+            if (!int.TryParse(rawLimit, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+                || parsed < 1
+                || parsed > EventBuffer.MaxPageSize)
+            {
+                await WriteAsync(context, 400, new { error = "invalid_limit" }).ConfigureAwait(false);
+                return;
+            }
+
+            limit = parsed;
+        }
+
+        var result = _events.Buffer.Read(cursor, limit);
+        if (result.Status != EventReadStatus.Ok || result.Page is null)
+        {
+            await WriteAsync(context, 410, new
+            {
+                error = "cursor_expired",
+                reason = result.Reason,
+                oldest = result.Oldest,
+                head = result.Head,
+                resumeCursor = result.ResumeCursor,
+                session = _events.Buffer.Session
+            }).ConfigureAwait(false);
+            return;
+        }
+
+        var page = result.Page;
+        await WriteAsync(context, 200, new EventPageResponse(
+            page.Events,
+            page.Cursor,
+            page.Head,
+            page.Oldest,
+            limit,
+            page.HasMore,
+            _events.Buffer.Session)).ConfigureAwait(false);
+    }
+
     private async Task<object> HealthAsync()
     {
         // Reads are safe off the game thread; the tick counter reports whether the
         // world is actually updating, because an idle server does not tick.
         var world = Main.worldName;
         var ticks = _dispatcher.Ticks;
+        var events = _events.Buffer.Snapshot();
         await Task.Yield();
         return new
         {
@@ -245,7 +316,14 @@ internal sealed class BridgeServer : IDisposable
             version = PluginVersion,
             world,
             port = _port,
-            ticks
+            ticks,
+            events = new
+            {
+                session = events.Session,
+                head = events.Head,
+                oldest = events.Oldest,
+                retained = events.Count
+            }
         };
     }
 

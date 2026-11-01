@@ -41,8 +41,8 @@ jobs:
       - name: Build
         run: dotnet build -c Release --no-restore
 
-      # The unit test project lives at tests/TShock.MCP.Server.Tests. The guard
-      # keeps the step informative if the project is ever moved or renamed.
+      # Unit test projects live under tests/: the gateway (net8.0) and the bridge
+      # plugin (net9.0). The guard keeps the step informative if they are moved.
       - name: Test
         run: |
           if [ -n "$(find tests -name '*.csproj' -print -quit 2>/dev/null)" ]; then
@@ -51,5 +51,7 @@ jobs:
             echo "No test project found under tests/; skipping."
           fi
 
-      - name: End-to-end smoke test
+      # Covers the 18 REST tools of phase 0 by MCP stdio against a fake TShock server.
+      # It does not cover the bridge yet; see docs/testing.md.
+      - name: End-to-end smoke test (phase 0, REST tools)
         run: python3 tests/e2e/mcp_stdio_smoke.py
