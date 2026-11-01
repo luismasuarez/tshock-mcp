@@ -226,7 +226,7 @@ Primer corte ya construido y probado contra el servidor real:
 | Plugin | `src/TShock.AgentBridge/AgentBridgePlugin.cs` | `[ApiVersion(2, 1)]`, `Order = 10`, arranque defensivo, token desde archivo o variable |
 | Servidor HTTP | `src/TShock.AgentBridge/BridgeServer.cs` | `HttpListener` en `0.0.0.0:7879`, bearer con comparación en tiempo constante, `401`/`404`/`500` sin filtrar trazas |
 | Dispatcher | `src/TShock.AgentBridge/MainThreadDispatcher.cs` | Cola `BlockingCollection`, timeout de 5 s, pump por `GameUpdate` y por temporizador cuando el servidor está en vacío |
-| Endpoints | — | `GET /v1/health` (estado, mundo, versión, ticks) y `GET /v1/world` (lectura a través del dispatcher) |
+| Endpoints | — | `GET /v1/health`, `GET /v1/world`, y regiones: `GET /v1/regions`, `GET /v1/regions/{name}`, `POST /v1/regions`, `DELETE /v1/regions/{name}` |
 
 Despliegue usado en la prueba:
 
@@ -268,7 +268,7 @@ log. La comprobación de que el pump de respaldo queda inactivo es el propio con
 - [x] Implementar `AgentBridgePlugin` con arranque y parada idempotentes.
 - [x] Implementar `MainThreadDispatcher` y probarlo con un work item que lea `Main.worldName`.
 - [x] Implementar `BridgeServer` con `/v1/health` y autenticación bearer.
-- [ ] Añadir regiones (listar, leer, crear, eliminar).
+- [x] Añadir regiones (listar, leer, crear, eliminar).
 - [ ] Añadir `EventBuffer` y `events_since` con cursor.
 - [ ] Añadir `CommandCatalog` y `/v1/commands`.
 - [ ] Añadir `BridgeClient` y `BridgeTools` al gateway, con degradación a REST.
@@ -492,6 +492,12 @@ docker/                          Imagen y ejemplo para Claude Desktop
   se queda esperando y expira. El puente usa un pump de respaldo por temporizador que actúa solo
   cuando el contador de ticks lleva más de un segundo estático, es decir, cuando no hay estado del
   mundo mutando en paralelo.
+- `RegionManager.ListAllRegions(worldid)` **solo selecciona `RegionName`** y devuelve objetos
+  `Region` con el resto de campos en cero. Para listar con datos reales hay que leer
+  `TShock.Regions.Regions` y filtrar por `WorldID`; `GetRegionByName` sí devuelve el registro
+  completo porque trabaja sobre la lista en memoria.
+- `RegionManager.DeleteRegion(name)` devuelve `true` aunque no exista la fila; hay que comprobar
+  `GetRegionByName` antes para poder responder `404`.
 
 ### No objetivos
 

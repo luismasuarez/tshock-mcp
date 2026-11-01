@@ -19,6 +19,7 @@ internal sealed class BridgeServer : IDisposable
     private readonly HttpListener _listener = new();
     private readonly byte[] _token;
     private readonly MainThreadDispatcher _dispatcher;
+    private readonly RegionService _regions;
     private readonly CancellationTokenSource _cts = new();
     private readonly int _port;
     private Task? _acceptLoop;
@@ -31,6 +32,7 @@ internal sealed class BridgeServer : IDisposable
         _port = port;
         _token = Encoding.UTF8.GetBytes(token);
         _dispatcher = dispatcher;
+        _regions = new RegionService(dispatcher);
         _listener.Prefixes.Add($"http://*:{port}/");
     }
 
@@ -114,6 +116,12 @@ internal sealed class BridgeServer : IDisposable
                     return;
                 }
                 default:
+                    if (IsRegionsPath(context.Request.Url?.AbsolutePath))
+                    {
+                        await RouteRegionsAsync(context).ConfigureAwait(false);
+                        return;
+                    }
+
                     await WriteAsync(context, 404, new { error = "not_found" }).ConfigureAwait(false);
                     return;
             }
@@ -132,6 +140,96 @@ internal sealed class BridgeServer : IDisposable
             }
         }
     }
+
+    private static bool IsRegionsPath(string? path) =>
+        path is "/v1/regions" || (path?.StartsWith("/v1/regions/", StringComparison.Ordinal) ?? false);
+
+    private async Task RouteRegionsAsync(HttpListenerContext context)
+    {
+        var request = context.Request;
+        var path = request.Url?.AbsolutePath ?? "/";
+        var method = request.HttpMethod;
+
+        if (path == "/v1/regions")
+        {
+            if (method == "GET")
+            {
+                await WriteAsync(context, 200, new { regions = await _regions.ListAsync().ConfigureAwait(false) }).ConfigureAwait(false);
+                return;
+            }
+
+            if (method == "POST")
+            {
+                RegionCreateRequest? body;
+                try
+                {
+                    body = await JsonSerializer.DeserializeAsync<RegionCreateRequest>(
+                        request.InputStream, cancellationToken: _cts.Token).ConfigureAwait(false);
+                }
+                catch (JsonException)
+                {
+                    await WriteAsync(context, 400, new { error = "invalid_json" }).ConfigureAwait(false);
+                    return;
+                }
+
+                if (body is null)
+                {
+                    await WriteAsync(context, 400, new { error = "invalid_json" }).ConfigureAwait(false);
+                    return;
+                }
+
+                var (region, error) = await _regions.CreateAsync(body).ConfigureAwait(false);
+                if (error is not null)
+                {
+                    await WriteAsync(context, StatusForRegionError(error), new { error }).ConfigureAwait(false);
+                    return;
+                }
+
+                await WriteAsync(context, 201, region!).ConfigureAwait(false);
+                return;
+            }
+
+            await WriteAsync(context, 405, new { error = "method_not_allowed" }).ConfigureAwait(false);
+            return;
+        }
+
+        var name = Uri.UnescapeDataString(path["/v1/regions/".Length..]);
+        if (method == "GET")
+        {
+            var region = await _regions.GetAsync(name).ConfigureAwait(false);
+            if (region is null)
+            {
+                await WriteAsync(context, 404, new { error = "region_not_found" }).ConfigureAwait(false);
+                return;
+            }
+
+            await WriteAsync(context, 200, region).ConfigureAwait(false);
+            return;
+        }
+
+        if (method == "DELETE")
+        {
+            var (deleted, error) = await _regions.DeleteAsync(name).ConfigureAwait(false);
+            if (!deleted)
+            {
+                await WriteAsync(context, StatusForRegionError(error ?? "delete_failed"), new { error = error ?? "delete_failed" }).ConfigureAwait(false);
+                return;
+            }
+
+            await WriteAsync(context, 204, new { deleted = true }).ConfigureAwait(false);
+            return;
+        }
+
+        await WriteAsync(context, 405, new { error = "method_not_allowed" }).ConfigureAwait(false);
+    }
+
+    private static int StatusForRegionError(string error) => error switch
+    {
+        "name_required" or "invalid_size" or "invalid_position" or "out_of_bounds" or "invalid_json" => 400,
+        "region_not_found" => 404,
+        "region_exists" => 409,
+        _ => 500
+    };
 
     private async Task<object> HealthAsync()
     {
