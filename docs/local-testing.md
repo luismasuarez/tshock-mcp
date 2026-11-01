@@ -94,6 +94,57 @@ detiene, revisa los logs antes de reintentar.
 > El token es visible en `docker inspect` porque viaja como argumento. Para una prueba local es
 > aceptable; en producción usa un token en `config.json` y un grupo con permisos mínimos.
 
+### Multijugador desde otra PC de la LAN
+
+El binding de arriba permite conectarse solo desde el host. Para jugar desde otra PC:
+
+1. Publica el puerto del juego en la IP del host y **mantén la REST en loopback**:
+
+   ```bash
+   -p 192.168.1.104:7777:7777 \
+   -p 127.0.0.1:7878:7878 \
+   ```
+
+   `-p 7777:7777` (equivalente a `0.0.0.0`) también funciona, pero expone el puerto a cualquier
+   interfaz, incluida Tailscale. Si tu IP es dinámica, el binding fijo deja de servir tras un cambio
+   de DHCP.
+
+2. Abre el firewall solo para tu subred:
+
+   ```bash
+   sudo ufw allow from 192.168.1.0/24 to any port 7777 proto tcp
+   ```
+
+3. Define una contraseña. El archivo `config.json` pertenece a root, así que edítalo con un
+   contenedor efímero:
+
+   ```bash
+   PASS="$(cat "$HOME/.config/tshock-mcp/server-password")"
+   docker run --rm -v "$DATA/tshock:/tshock" --entrypoint sh \
+     ghcr.io/pryaxis/tshock:latest -c \
+     "sed -i 's/\"ServerPassword\": \"\"/\"ServerPassword\": \"$PASS\"/' /tshock/config.json"
+   ```
+
+   La contraseña se guarda en `~/.config/tshock-mcp/server-password` con permisos `600`. No la
+   pongas en el repositorio.
+
+4. Comprueba el resultado:
+
+   ```bash
+   curl -fsS "http://127.0.0.1:7878/v2/server/status?token=$TOKEN" | grep -o '"serverpassword":[a-z]*'
+   ss -ltn | grep 7777   # debe mostrar la IP de LAN, no 127.0.0.1
+   ```
+
+   `"serverpassword":true` confirma que TShock exige la contraseña.
+
+5. En la otra PC: Terraria → Multiplayer → Join via IP → IP del host y puerto `7777`.
+
+   - La versión del cliente debe coincidir exactamente con `serverversion` (por ejemplo `1.4.5.8`).
+   - Steam debe estar abierto (DRM), pero no hacen falta invitaciones: la conexión por IP es directa.
+   - Una cuenta de Steam no puede estar activa en dos PCs a la vez.
+   - El primer jugador que ejecute `/setup <código>` en el chat reclama el grupo `superadmin`. El
+     código está en `$DATA/tshock/setup-code.txt` y en los logs del contenedor.
+
 ---
 
 ## 3. Verificar REST antes de tocar OpenCode
@@ -324,6 +375,9 @@ El token de `~/.config/tshock-mcp/token` se puede conservar para la próxima pru
 | `permission denied` al ejecutar Docker | Usuario sin acceso al socket | Agregar el usuario al grupo `docker` y reiniciar sesión |
 | El contenedor termina al arrancar | Mundo inexistente, ruta mal escrita o error de configuración | Revisar `docker logs tshock-test` |
 | `Connection refused` en `:7878` | REST no habilitado o contenedor detenido | Verificar `-rest-enabled true`, el puerto y `docker ps` |
+| Otra PC de la LAN no conecta al `7777` | Puerto publicado en loopback o UFW bloqueando | Publicar en la IP de LAN y permitir la subred (ver «Multijugador desde otra PC de la LAN») |
+| «Password incorrect» / no pasa del menú | Contraseña distinta o `ServerPassword` vacío | Revisar `"serverpassword":true` y la contraseña del archivo `600` |
+| «Version mismatch» al conectar | Cliente con otra versión de Terraria | Actualizar el cliente a la `serverversion` del servidor |
 | `403` en todas las rutas | Token incorrecto o grupo sin permisos | Revisar `-rest-token` y el grupo asociado |
 | El contenedor no puede escribir en los volúmenes | Propietario del directorio | Ajustar propietario o ejecutar con `--user` |
 | `tshock` no aparece en `opencode mcp list` | Configuración en el proyecto equivocado o servicio sin reiniciar | Repetir desde la raíz, `opencode service restart` |
