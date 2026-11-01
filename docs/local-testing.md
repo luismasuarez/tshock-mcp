@@ -20,13 +20,14 @@ prohibiciones. Las regiones, eventos y comandos quedan para la Fase 1.
 | --- | --- |
 | Docker | `docker --version` |
 | Puertos libres | `ss -ltn \| grep -E ':(7777\|7878)\b'` sin resultados |
-| Espacio | `df -h /home`; la imagen ocupa ~104 MB comprimidos |
+| Espacio | `df -h "$(docker info --format '{{.DockerRootDir}}')"`; la imagen descomprimida ocupa ~405 MB |
 | `openssl` | `openssl version` |
 | Binario compilado | `dotnet build -c Release` en el repo |
 | OpenCode v2 | `opencode --version` |
 
 Si el disco está justo, `docker system df` muestra lo reclamable. No borres caché sin revisar antes
-qué se va a eliminar.
+qué se va a eliminar. Comprueba el sistema de archivos del *Docker root dir*: las capas de la imagen
+no se guardan necesariamente en `/home`.
 
 ---
 
@@ -108,11 +109,12 @@ curl -fsS "http://127.0.0.1:7878/world/read?token=$TOKEN" \
 Debe aparecer el nombre del servidor, las versiones de Terraria y TShock, el mundo y el uptime. Si
 esto falla, el problema está en TShock o en el token, no en el gateway.
 
-Prueba también un token incorrecto:
+Prueba también un token incorrecto. La ruta de estado es pública y responde aunque el token falte o
+sea inválido, así que el rechazo se comprueba en una ruta protegida:
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' \
-  "http://127.0.0.1:7878/v2/server/status?token=incorrecto"
+  "http://127.0.0.1:7878/world/read?token=incorrecto"
 ```
 
 Debe devolver `403`.
@@ -124,7 +126,8 @@ Debe devolver `403`.
 OpenCode lanza el servidor MCP como proceso hijo. Para no escribir el token en la configuración del
 proyecto, usa un pequeño envoltorio que lo lee del archivo con permisos `600`.
 
-Crea `scripts/run-tshock-mcp.sh` en el repositorio:
+El envoltorio ya está en el repositorio: `scripts/run-tshock-mcp.sh`, con permisos de ejecución
+versionados. Este es su contenido de referencia:
 
 ```bash
 #!/usr/bin/env bash
@@ -179,12 +182,14 @@ opencode mcp add tshock \
 Comprueba qué archivo escribió:
 
 ```bash
-git status --short
+ls -l opencode.json
 opencode mcp list
 ```
 
-Debe aparecer `✓ tshock connected`. El CLI de OpenCode v2 escribe en `mcp.servers`. Si el comando
-creó una entrada en la configuración global, bórrala y repite desde la raíz del proyecto.
+`opencode.json` está en `.gitignore` porque contiene rutas absolutas de la máquina, así que
+`git status --short` no lo mostrará. Debe aparecer `✓ tshock connected`. El CLI de OpenCode v2
+escribe en `mcp.servers`. Si el comando creó una entrada en la configuración global, bórrala y
+repite desde la raíz del proyecto.
 
 Configuración manual equivalente, si prefieres editar el archivo:
 
@@ -210,15 +215,17 @@ Configuración manual equivalente, si prefieres editar el archivo:
 
 No agregues `TSHOCK_TOKEN` a este archivo: lo inyecta el envoltorio.
 
-Si OpenCode ya estaba abierto:
+Si las tools no aparecen en la sesión abierta (OpenCode v2 suele recargar la configuración del
+proyecto en caliente):
 
 ```bash
 opencode service restart
 opencode mcp list
 ```
 
-Las tools aparecen como `tshock_server_status`, `tshock_players_list`, etc. Con Code Mode se agrupan
-bajo `tools.tshock.*`.
+Las tools se exponen con el nombre que declara el servidor (`server_status`, `players_list`, ...) y
+el cliente las prefija con el nombre del servidor: `tshock_server_status`, `tshock_players_list`,
+etc. Con Code Mode se agrupan bajo `tools.tshock.*`.
 
 ---
 
@@ -228,7 +235,7 @@ Pide al agente, en este orden:
 
 | Paso | Petición al agente | Resultado esperado |
 | --- | --- | --- |
-| 1 | «Usa `tshock_server_status` y dime el estado» | Nombre, versiones, jugadores, uptime |
+| 1 | «Usa `tshock_server_status` y dime el estado» | Versiones, jugadores, mundo y uptime (el nombre puede venir vacío si el servidor no tiene uno configurado) |
 | 2 | «Consulta `tshock_world_info`» | Mundo, tamaño, hora, luna de sangre |
 | 3 | «Lista los jugadores conectados» | Lista vacía si no hay nadie |
 | 4 | «Muéstrame el MOTD y las reglas» | Texto o respuesta vacía, sin error |
@@ -244,7 +251,9 @@ Verifica que cada respuesta sea el sobre esperado:
 ### Errores controlados
 
 Con un token incorrecto, el gateway debe devolver `rest_error` con `httpStatus: 403`, no un crash.
-Puedes probarlo reiniciando el MCP con otra variable de entorno o directamente con `curl`.
+La ruta de estado es pública, así que usa una herramienta protegida, por ejemplo
+`tshock_world_info`. Puedes probarlo reiniciando el MCP con otra variable de entorno o directamente
+con `curl`.
 
 Con la escritura desactivada, pide:
 
