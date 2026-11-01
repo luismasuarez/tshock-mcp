@@ -91,4 +91,39 @@ public sealed class ToolResultsTests
         Assert.Equal("network_error", error["code"]!.GetValue<string>());
         Assert.False(error.ContainsKey("httpStatus"));
     }
+
+    [Fact]
+    public void From_BridgeSuccessKeepsTheBody()
+    {
+        var json = ToolResults.From(BridgeResult.Success(200, new JsonObject { ["head"] = 3 }));
+        var envelope = Assert.IsType<JsonObject>(JsonNode.Parse(json));
+
+        Assert.True(envelope["ok"]!.GetValue<bool>());
+        Assert.Equal(3, Assert.IsType<JsonObject>(envelope["data"])["head"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public void From_BridgeErrorKeepsDetailsAndStableFields()
+    {
+        var details = new JsonObject { ["reason"] = "evicted", ["resumeCursor"] = 9500 };
+        var json = ToolResults.From(
+            BridgeResult.Failure("cursor_expired", "Resume from cursor 9500.", 410, details));
+        var error = Assert.IsType<JsonObject>(
+            Assert.IsType<JsonObject>(JsonNode.Parse(json))["error"]);
+
+        Assert.Equal("cursor_expired", error["code"]!.GetValue<string>());
+        Assert.Equal("Resume from cursor 9500.", error["message"]!.GetValue<string>());
+        Assert.Equal(410, error["httpStatus"]!.GetValue<int>());
+        var errorDetails = Assert.IsType<JsonObject>(error["details"]);
+        Assert.Equal(9500, errorDetails["resumeCursor"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public void Error_WithoutDetailsOmitsTheProperty()
+    {
+        var error = Assert.IsType<JsonObject>(
+            Assert.IsType<JsonObject>(JsonNode.Parse(ToolResults.Error("bridge_unavailable", "down")))["error"]);
+
+        Assert.False(error.ContainsKey("details"));
+    }
 }

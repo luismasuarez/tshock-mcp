@@ -51,7 +51,7 @@ jobs:
             echo "No test project found under tests/; skipping."
           fi
 
-      # Covers the 18 REST tools of phase 0 by MCP stdio against a fake TShock server.
-      # It does not cover the bridge yet; see docs/testing.md.
-      - name: End-to-end smoke test (phase 0, REST tools)
+      # Covers the 18 REST tools of phase 0 and events_since of phase 1 by MCP stdio
+      # against a fake TShock server and a fake bridge; see docs/testing.md.
+      - name: End-to-end smoke test (REST tools and bridge events)
         run: python3 tests/e2e/mcp_stdio_smoke.py

@@ -5,13 +5,13 @@ eventos del servidor. Corre **dentro** del proceso de TShock y escucha en loopba
 sigue siendo el único proceso que habla MCP.
 
 > **Estado.** Regiones (`GET`, `GET` por nombre, `POST`, `DELETE`) y eventos con cursor
-> (`GET /v1/events`) están implementados y verificados contra TShock 6.2.1.0. El descubrimiento de
-> comandos, la ejecución con allowlist y las herramientas MCP que consumen el puente todavía no
-> existen; llegarán con `BridgeClient` y `BridgeTools`.
+> (`GET /v1/events`) están implementados y verificados contra TShock 6.2.1.0. El gateway ya consume
+> `GET /v1/events` mediante la herramienta `events_since`. Las herramientas de región, el
+> descubrimiento de comandos y la ejecución con allowlist todavía no existen.
 >
-> **Este documento describe la capa HTTP del plugin, no la interfaz MCP.** Ninguna de estas rutas es
-> invocable por el agente hasta que exista la tool correspondiente. Las pruebas de esta capa no son
-> la aceptación MCP; consulte [`testing.md`](testing.md).
+> **Este documento describe la capa HTTP del plugin.** La única ruta invocable hoy por el agente es
+> `/v1/events`, a través de `events_since`; el resto sigue siendo capa inferior hasta que exista su
+> tool. Las pruebas por `curl` no son la aceptación MCP; consulte [`testing.md`](testing.md).
 
 ## Despliegue
 
@@ -250,7 +250,15 @@ Los nombres de región se decodifican con `Uri.UnescapeDataString`.
 - `GET /v1/commands` y la allowlist de ejecución.
 - `POST /v1/commands/execute`.
 - `GET /v1/config`.
-- `BridgeClient` y las herramientas MCP (`regions_*`, `events_since`, `commands_list`,
-  `config_get`, `run_command`).
+- Las herramientas MCP de región (`regions_*`) y de comandos (`commands_list`, `config_get`,
+  `run_command`). `events_since` ya existe y es la única tool que consume el puente.
 - Notificaciones push o streaming. El cliente consulta con su cursor.
 - Persistencia de eventos entre reinicios.
+
+## Cómo lo consume el gateway
+
+`events_since` llama a `GET /v1/events` a través de `TShock/BridgeClient.cs`, que se autentica con
+`Authorization: Bearer`, nunca pone el token en la URL y traduce las respuestas a los códigos
+estables del sobre MCP (`bridge_unavailable`, `bridge_timeout`, `bridge_auth_error`, `bridge_error`,
+`cursor_expired`). La configuración del gateway se documenta en el
+[README](../README.md#variables-de-entorno).

@@ -7,7 +7,7 @@ detalles de entorno que no son evidentes desde el código.
 - **Repositorio:** https://github.com/luismasuarez/tshock-mcp
 - **Estado:** Fase 0 completada y verificada contra un servidor TShock real (TShock 6.2.1.0,
   Terraria 1.4.5.8, cliente en la LAN). Fase 1 en curso: el plugin `TShock.AgentBridge` carga y
-  expone regiones y eventos con cursor; falta la integración con el gateway.
+  expone regiones y eventos con cursor; `events_since` ya consume el puente desde MCP.
 - **Commit de referencia:** `v0.1.0`.
 - **Fecha de cierre de la sesión:** 1 de noviembre de 2026.
 
@@ -25,11 +25,11 @@ detalles de entorno que no son evidentes desde el código.
 | Configuración | Solo variables de entorno, validación estricta al arrancar |
 | Seguridad | Escritura desactivada por defecto, token nunca registrado, IP y credenciales redactadas |
 | Contrato de salida | Sobre JSON estable `ok` / `error` |
-| Pruebas | 132 pruebas xUnit (109 del gateway y 23 del puente) y 17 comprobaciones e2e por stdio |
+| Pruebas | 175 pruebas xUnit (152 del gateway y 23 del puente) y 31 comprobaciones e2e por stdio |
 | Verificación real | Lectura, escritura, errores y redacción probados con un cliente de Terraria en la LAN |
 | Privilegio mínimo | Grupo dedicado `mcp-rest` sin permisos de escritura; la escritura tiene dos barreras (flag del gateway y permisos de TShock) |
 | Distribución | Dockerfile multi-stage y workflow de CI |
-| Puente Fase 1 | Plugin `TShock.AgentBridge` cargado en TShock 6.2.1.0; regiones y eventos con cursor verificados por HTTP. La capa MCP (`BridgeClient` y tools) no existe |
+| Puente Fase 1 | Plugin `TShock.AgentBridge` cargado en TShock 6.2.1.0; regiones y eventos con cursor verificados por HTTP. `BridgeClient` y `events_since` implementados; tools de región y comandos pendientes |
 
 ### Estado por capas de la Fase 1
 
@@ -39,10 +39,10 @@ puente, así que regiones y eventos **no** están disponibles desde el cliente M
 | Capa | Estado | Verificado por |
 | --- | --- | --- |
 | Plugin: regiones y eventos | Implementado | HTTP directo y unitarias del buffer |
-| `BridgeClient` en el gateway | No existe | — |
-| Tool `events_since` | No existe | — |
+| `BridgeClient` en el gateway | Implementado | Unitarias con HTTP falso y e2e |
+| Tool `events_since` | Implementada | E2E MCP por stdio con puente falso |
 | Tools de región | No existen | — |
-| E2E MCP del puente | No existe | — |
+| E2E MCP del puente | Existe para `events_since` | `mcp_stdio_smoke.py` con puente falso |
 | Verificación real del plugin | Parcial: región, `player.join` y `command` | HTTP directo; faltan chat, muerte, jefe y salida |
 
 El detalle de capas y criterios está en [`testing.md`](testing.md).
@@ -50,7 +50,8 @@ El detalle de capas y criterios está en [`testing.md`](testing.md).
 ### Lo que no existe todavía
 
 - Transporte HTTP y OAuth 2.1.
-- Herramientas MCP que consuman el puente (`BridgeClient` y `BridgeTools`).
+- Herramientas MCP de región (`regions_*`) y de comandos (`commands_list`, `config_get`,
+  `run_command`).
 - Descubrimiento y ejecución de comandos con allowlist.
 - Notificaciones push o streaming de eventos.
 - Ejecución de comandos arbitrarios, apagado, mutación de usuarios o prohibiciones.
@@ -65,8 +66,8 @@ dotnet test -c Release --no-build
 python3 tests/e2e/mcp_stdio_smoke.py
 ```
 
-Resultados esperados: 0 advertencias, 132 pruebas superadas y `E2E PASSED` con 17 comprobaciones.
-La prueba e2e cubre las 18 tools REST de la Fase 0; todavía no existe una e2e MCP del puente.
+Resultados esperados: 0 advertencias, 175 pruebas superadas y `E2E PASSED` con 31 comprobaciones.
+La prueba e2e cubre las 18 tools REST de la Fase 0 y `events_since` contra un puente falso.
 
 ---
 
@@ -210,8 +211,8 @@ public sealed class MainThreadDispatcher
 ### Eventos y cursor
 
 Implementado en el plugin y verificado contra el servidor real para eventos de región, de entrada y
-de comando. El gateway todavía no lo expone como herramienta MCP; la tool se llamará `events_since`
-y consumirá `GET /v1/events`.
+de comando. El gateway lo expone como la herramienta MCP `events_since`, que consume
+`GET /v1/events` a través de `BridgeClient`.
 
 - Ring buffer en memoria de 10 000 eventos; el cursor `long` empieza en `1` y es exclusivo.
 - `GET /v1/events?cursor=&limit=`: `limit` entre 1 y 500, 100 por defecto. Omitir `cursor` devuelve
@@ -271,8 +272,8 @@ Primer corte ya construido y probado contra el servidor real:
 | Eventos | `src/TShock.AgentBridge/EventBuffer.cs` y `EventService.cs` | Ring buffer de 10 000 eventos, cursor monótono, suscripción a hooks de jugador, chat, comandos, muerte, jefes y regiones |
 | Endpoints | — | `GET /v1/health`, `GET /v1/world`, `GET /v1/events`, y regiones: `GET /v1/regions`, `GET /v1/regions/{name}`, `POST /v1/regions`, `DELETE /v1/regions/{name}` |
 
-Todo lo anterior es **capa plugin**. Ninguna de estas piezas es una tool MCP: el agente no puede
-invocarlas hasta que existan `BridgeClient` y `BridgeTools`.
+Todo lo anterior es **capa plugin**. La única ruta que el agente puede invocar hoy es
+`GET /v1/events`, a través de la tool `events_since`; el resto sigue sin consumidor MCP.
 
 Despliegue usado en la prueba:
 
@@ -317,9 +318,9 @@ log. La comprobación de que el pump de respaldo queda inactivo es el propio con
 - [x] Añadir regiones (listar, leer, crear, eliminar).
 - [x] Añadir `EventBuffer`, `EventService` y `GET /v1/events` con cursor.
 - [x] Añadir la suite xUnit del ring buffer (23 pruebas, `tests/TShock.AgentBridge.Tests`).
-- [ ] **Siguiente:** añadir `BridgeClient` y `BridgeTools` al gateway; empezar por `events_since`.
-- [ ] Añadir la prueba MCP por stdio del puente (`events_since` primero) con un puente falso.
-- [ ] Añadir las tools de región al gateway, con escritura condicionada y confirmación al borrar.
+- [x] Añadir `BridgeClient` y `BridgeTools` al gateway; empezar por `events_since`.
+- [x] Añadir la prueba MCP por stdio del puente (`events_since`) con un puente falso.
+- [ ] **Siguiente:** añadir las tools de región al gateway, con escritura condicionada y confirmación al borrar.
 - [ ] Añadir `CommandCatalog` y `/v1/commands`.
 - [ ] Probar en un servidor TShock real la recarga, la desconexión del bridge y la concurrencia de
       eventos con jugadores conectados.
@@ -329,14 +330,14 @@ log. La comprobación de que el pump de respaldo queda inactivo es el propio con
 
 | Criterio | Estado |
 | --- | --- |
-| La suite de Fase 0 sigue en verde sin cambios de contrato. | Hecho: 109 pruebas y 17 checks e2e. |
+| La suite de Fase 0 sigue en verde sin cambios de contrato. | Hecho: 175 pruebas y 31 checks e2e. |
 | El plugin carga en TShock 6.2.1 y se descarga sin dejar hilos ni puertos abiertos. | Hecho para la carga; la descarga en caliente no existe. |
 | Crear y eliminar una región desde MCP se refleja en el servidor. | Pendiente: hoy solo existe la ruta HTTP del plugin. |
-| `events_since` devuelve eventos ordenados y estables entre reconexiones. | Pendiente: la ruta HTTP funciona; la tool MCP no existe. |
-| Un bridge caído no impide usar las tools REST. | Pendiente: no hay `BridgeClient` que degrade. |
+| `events_since` devuelve eventos ordenados y estables entre reconexiones. | Hecho con puente falso (unitarias y e2e); falta la verificación con jugadores reales. |
+| Un bridge caído no impide usar las tools REST. | Hecho y probado en la e2e: `bridge_unavailable` sin afectar a REST. |
 | Ninguna mutación se ejecuta fuera del hilo principal. | Hecho en las rutas de región del plugin. |
-| El token del bridge no aparece en logs ni en respuestas. | Verificado en el plugin; pendiente en el gateway. |
-| Toda tool del puente tiene prueba MCP por stdio. | Pendiente; es la definición de terminado de [`testing.md`](testing.md). |
+| El token del bridge no aparece en logs ni en respuestas. | Verificado en el plugin y en la e2e del gateway. |
+| Toda tool del puente tiene prueba MCP por stdio. | Hecho para `events_since`; las tools nuevas lo heredan como requisito. |
 
 ### Riesgos
 
@@ -346,7 +347,7 @@ log. La comprobación de que el pump de respaldo queda inactivo es el propio con
 | Cambios de API entre versiones de TShock | Fijar 6.2.1, compilar contra NuGet y probar en un servidor real |
 | Volumen de eventos | Ring buffer acotado, límite por llamada y `cursor_expired` |
 | Escalada por comandos | Allowlist vacía, permisos del actor y confirmación |
-| Doble fuente de verdad (REST y bridge) | Cuando exista `BridgeClient`, el bridge manda si está disponible; el gateway documenta la degradación |
+| Doble fuente de verdad (REST y bridge) | El bridge manda si está disponible; el gateway documenta y prueba la degradación |
 
 ---
 
@@ -375,7 +376,8 @@ El spec MCP **2026-07-28** eliminó las sesiones a nivel de protocolo y el heade
 
 ### Criterios de aceptación
 
-- Un cliente remoto completa el handshake y lista las 18 tools.
+- Un cliente remoto completa el handshake y lista el catálogo completo (18 tools REST y las del
+  puente disponibles en ese momento).
 - Un token inválido o de audiencia incorrecta recibe 401.
 - Un scope insuficiente recibe un error de autorización, no un 500.
 - El token no aparece en logs, auditoría ni URLs.
@@ -466,8 +468,11 @@ src/TShock.MCP.Server/
   TShock/ResponseRedactor.cs     Redacción de IP y credenciales
   TShock/AuditLog.cs             JSONL de auditoría
   TShock/ToolResults.cs          Sobre estable
+  TShock/HttpPayload.cs          Lectura acotada y saneado compartido
+  TShock/BridgeClient.cs         Cliente HTTP del puente y códigos de error
   Tools/ReadTools.cs             12 tools de lectura
   Tools/WriteTools.cs            6 tools de escritura
+  Tools/BridgeTools.cs           1 tool del puente (events_since)
 src/TShock.AgentBridge/          Plugin de Fase 1 (net9.0)
   AgentBridgePlugin.cs           Arranque, hooks de ciclo de vida
   BridgeServer.cs                HTTP loopback, auth y rutas
@@ -476,7 +481,7 @@ src/TShock.AgentBridge/          Plugin de Fase 1 (net9.0)
   EventBuffer.cs                 Ring buffer y contrato de cursor
   EventService.cs                Suscripción a hooks y publicación
 tests/
-  TShock.MCP.Server.Tests/       Suite xUnit del gateway (109)
+  TShock.MCP.Server.Tests/       Suite xUnit del gateway (152)
   TShock.AgentBridge.Tests/      Suite xUnit del puente (23)
   e2e/mcp_stdio_smoke.py         Prueba de extremo a extremo
 docs/                            Arquitectura, bridge, tools, testing, seguridad, roadmap
@@ -495,11 +500,10 @@ docker/                          Imagen y ejemplo para Claude Desktop
 
 ### Primeras tareas sugeridas
 
-1. Añadir `BridgeClient` y la tool `events_since` al gateway: es el corte vertical que falta.
-2. Añadir la prueba MCP por stdio de `events_since` con un puente falso.
-3. Añadir las tools de región, con escritura condicionada y confirmación al borrar.
-4. Verificar por MCP los eventos de chat, muerte, jefe y salida con un jugador conectado.
-5. Añadir `CommandCatalog` y `GET /v1/commands`.
+1. Añadir las tools de región, con escritura condicionada y confirmación al borrar.
+2. Verificar por MCP los eventos de chat, muerte, jefe y salida con un jugador conectado.
+3. Añadir `CommandCatalog` y `GET /v1/commands`.
+4. Traducir y verificar `config_get` y, por último, `run_command` con allowlist.
 
 ---
 
@@ -593,7 +597,7 @@ Lo construido en esta sesión:
 - `GET /v1/events?cursor=&limit=` con `200`, `400` (`invalid_cursor`, `invalid_limit`), `401` y
   `410 cursor_expired`.
 - Suite `tests/TShock.AgentBridge.Tests` con 23 pruebas del buffer y del truncado; el total sube a
-  132.
+  132 (175 tras el corte de `events_since`).
 - `docs/bridge.md` con el contrato completo.
 
 Verificado contra el servidor real (TShock 6.2.1.0):
@@ -616,6 +620,39 @@ Durante la sesión se conectó un jugador real, lo que permitió verificar adem�
 Pendiente de verificación con un cliente: `player.leave`, `chat`, `player.death` y `boss.kill`. Los
 hooks están registrados y compilan contra TShock 6.2.1.0; faltan las acciones en vivo (hablar, morir,
 matar un jefe y desconectarse).
+
+### Continuación: `BridgeClient` y `events_since` (1 de noviembre de 2026)
+
+Primer corte vertical MCP → puente. Lo construido:
+
+- `TShockOptions` lee `TSHOCK_BRIDGE_URL`, `TSHOCK_BRIDGE_TOKEN`, `TSHOCK_BRIDGE_TOKEN_FILE` y
+  `TSHOCK_BRIDGE_TIMEOUT_SECONDS`. Sin ninguna de ellas el puente queda deshabilitado y el gateway
+  arranca igual; una configuración parcial es un error de arranque, no un valor de reserva.
+- `TShock/HttpPayload.cs` centraliza la lectura acotada a 5 MB, el rechazo de claves JSON duplicadas
+  y el truncado; `TShockClient` lo reutiliza sin cambios de comportamiento.
+- `TShock/BridgeClient.cs` con bearer por petición, sin token en la URL, auditoría JSONL y los
+  códigos `bridge_unavailable`, `bridge_timeout`, `bridge_auth_error`, `bridge_error` y
+  `cursor_expired`.
+- `Tools/BridgeTools.cs` con `events_since`, registrada siempre: sin puente responde
+  `bridge_unavailable` en lugar de desaparecer del catálogo.
+- `ToolResults.Error` acepta un objeto `details` opcional dentro de `error`. Es aditivo y conserva
+  `code`, `message` y `httpStatus`. `cursor_expired` lo usa para devolver `reason`, `oldest`, `head`,
+  `resumeCursor` y `session`.
+- 43 pruebas nuevas en el gateway (de 109 a 152) y 14 checks nuevos en la e2e (de 17 a 31), incluida
+  la degradación: con el puente apagado, `server_status` sigue respondiendo.
+
+Trampas de esta sesión:
+
+- El binder de argumentos del SDK resuelve bien los parámetros opcionales (`long?`, `int?`): la
+  validación de rango tiene que vivir en el cuerpo de la tool, no en el binder.
+- `HttpClient.Timeout` vuelve a manifestarse como `TaskCanceledException`; sin comprobar
+  `cancellationToken.IsCancellationRequested` el agente recibe `bridge_timeout` cuando en realidad
+  canceló él.
+- Un mensaje de `HttpRequestException` real suele traer la URL completa; el saneado debe reemplazar
+  también la autoridad, no solo la ruta.
+- Verificar `Content-Length` antes de leer evita descargar un cuerpo enorme solo para rechazarlo.
+- Los tests de configuración comparten el entorno del proceso: las variables nuevas tienen que
+  entrar en `EnvironmentScope.Names` o se filtran entre pruebas.
 
 ### No objetivos
 

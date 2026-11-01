@@ -27,7 +27,20 @@ public static class ToolResults
             ? Ok(result.Body)
             : Error(result.ErrorCode ?? "unknown_error", result.ErrorMessage ?? "Unknown error", result.StatusCode);
 
-    public static string Error(string code, string message, int statusCode = 0)
+    public static string From(BridgeResult result) =>
+        result.Ok
+            ? Ok(result.Body)
+            : Error(
+                result.ErrorCode ?? "unknown_error",
+                result.ErrorMessage ?? "Unknown error",
+                result.StatusCode,
+                result.ErrorDetails);
+
+    /// <param name="details">
+    /// Optional machine-readable context added inside the <c>error</c> object. It
+    /// never replaces the stable <c>code</c>, <c>message</c> or <c>httpStatus</c>.
+    /// </param>
+    public static string Error(string code, string message, int statusCode = 0, JsonNode? details = null)
     {
         var error = new JsonObject
         {
@@ -38,6 +51,11 @@ public static class ToolResults
         if (statusCode > 0)
         {
             error["httpStatus"] = statusCode;
+        }
+
+        if (details is not null)
+        {
+            error["details"] = details;
         }
 
         return new JsonObject

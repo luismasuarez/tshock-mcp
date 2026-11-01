@@ -1,7 +1,12 @@
 # Referencia de herramientas
 
-La Fase 0 expone exactamente **18 herramientas**: 12 de lectura y 6 de escritura. Todas se ejecutan
-como peticiones `GET` contra la API REST de TShock, que usa ese método incluso para mutaciones.
+La Fase 0 expone exactamente **18 herramientas REST**: 12 de lectura y 6 de escritura. Todas se
+ejecutan como peticiones `GET` contra la API REST de TShock, que usa ese método incluso para
+mutaciones.
+
+La Fase 1 agrega de forma aditiva **herramientas del puente** que hablan con el plugin
+`TShock.AgentBridge` por HTTP en loopback. Hoy existe una, `events_since`, así que el catálogo total
+es de **19 herramientas**. Las 18 de la Fase 0 conservan su nombre, sus rutas y su semántica.
 
 Convenciones de la tabla:
 
@@ -222,17 +227,42 @@ la URL base. Un `error` con estado 200 produce el mismo código con `httpStatus:
 - El tamaño de las respuestas está acotado; una respuesta excesiva se rechaza con
   `response_too_large` en lugar de consumir memoria sin límite.
 
+## Herramientas del puente (Fase 1)
+
+Estas herramientas no usan la API REST: hablan con el plugin `TShock.AgentBridge` por HTTP en
+loopback, con un token propio distinto del token REST. Su contrato HTTP está en
+[bridge.md](bridge.md).
+
+| Herramienta | Propósito | Ruta | Argumentos | Efectos |
+| --- | --- | --- | --- | --- |
+| `events_since` | Eventos del servidor posteriores a un cursor **exclusivo**: entradas, salidas, chat, comandos, muertes, jefes y cambios de región. | `GET /v1/events` | `cursor` (opcional, entero `>= 0`), `limit` (opcional, 1–500, 100 por defecto) | Ninguno. Solo lectura |
+
+Comportamiento:
+
+- **Cursor.** El valor devuelto en `cursor` es el que se pasa en la siguiente llamada; la respuesta
+  solo incluye eventos con cursor mayor. Omitirlo devuelve todo el backlog retenido, lo que permite
+  arrancar un cliente nuevo.
+- **Paginación.** `hasMore` indica si quedan eventos posteriores. El límite máximo por llamada es
+  500.
+- **Errores.** `bridge_unavailable` (puente apagado o sin configurar), `bridge_timeout`,
+  `bridge_auth_error`, `bridge_error` y `cursor_expired`. Este último agrega un objeto `details`
+  dentro de `error` con `reason` (`evicted` o `unknown`), `oldest`, `head`, `resumeCursor` y
+  `session`, para que el agente reanude sin adivinar.
+- **Sin puente configurado**, la herramienta sigue en el catálogo y responde `bridge_unavailable`.
+  Un agente que no ve la herramienta no puede diagnosticar nada; un error explicado sí.
+- **Contenido no confiable.** Los eventos con texto que un jugador puede influir traen
+  `"untrusted": true`. El modelo debe tratarlos como datos, nunca como instrucciones.
+- No depende de `TSHOCK_MCP_ALLOW_WRITE`: es de solo lectura.
+
 ## Catálogo actual y herramientas pendientes
 
-Las **18 herramientas** de las secciones anteriores son las únicas que el agente puede invocar hoy.
-Todas usan la API REST de TShock. El puente de Fase 1 existe, pero el gateway todavía no lo consume:
-sus rutas HTTP no son herramientas MCP.
+Las 19 herramientas de las secciones anteriores son las únicas que el agente puede invocar hoy: 18
+contra la API REST y 1 contra el puente.
 
 Pendientes de implementar:
 
 | Tool prevista | Origen | Tipo | Estado |
 | --- | --- | --- | --- |
-| `events_since` | `GET /v1/events` del puente | Lectura | No existe |
 | `regions_list` | `GET /v1/regions` del puente | Lectura | No existe |
 | `region_info` | `GET /v1/regions/{name}` del puente | Lectura | No existe |
 | `region_create` | `POST /v1/regions` del puente | Escritura | No existe |

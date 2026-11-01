@@ -19,7 +19,7 @@ usar la funcionalidad.
 | Unidad | Lógica pura: validación, sobre, redacción, ring buffer. | `dotnet test -c Release` | Ninguna | No |
 | Plugin HTTP | Contrato del puente: rutas, cursores, errores, regiones. | Script contra `127.0.0.1:7879` con el token del puente | Loopback | No |
 | Gateway MCP | Una tool real por stdio. Fase 0: las 18 tools REST contra un TShock falso. | `python3 tests/e2e/mcp_stdio_smoke.py` | TShock falso en puerto efímero | Sí |
-| Gateway MCP del puente | `events_since` y `regions_*` por stdio. | Arnés MCP con un puente falso | Loopback | Sí, cuando exista |
+| Gateway MCP del puente | `events_since` por stdio contra un puente falso. | `python3 tests/e2e/mcp_stdio_smoke.py` | Puente falso en puerto efímero | Sí |
 | Servidor real | Integración completa: TShock, plugin, gateway y cliente MCP. | Cliente MCP con secretos desde archivo | LAN o loopback | Sí, cuando la feature toca TShock |
 
 ## Comandos
@@ -33,7 +33,7 @@ dotnet test -c Release --no-build
 python3 tests/e2e/mcp_stdio_smoke.py
 ```
 
-Resultado esperado hoy: 0 advertencias, 132 pruebas superadas y `E2E PASSED` con 17 comprobaciones.
+Resultado esperado hoy: 0 advertencias, 175 pruebas superadas y `E2E PASSED` con 31 comprobaciones.
 
 ### Plugin del puente
 
@@ -53,17 +53,20 @@ capa inferior: no se usa como aceptación de una tool MCP.
 
 ### Aceptación MCP del puente
 
-Todavía **no existe**. Cuando se implementen `BridgeClient` y `BridgeTools`, el arnés debe:
+Existe para `events_since` y forma parte de `tests/e2e/mcp_stdio_smoke.py`. El arnés:
 
-1. Levantar un puente falso en un puerto efímero.
-2. Arrancar el binario real de `tshock-mcp`.
-3. Completar el handshake MCP por stdio.
-4. Invocar `events_since` y las tools de región.
-5. Verificar el sobre, los cursores, la paginación, los errores y la degradación cuando el puente
-   no responde.
+1. Levanta un puente falso en un puerto efímero con un token generado por la prueba.
+2. Arranca el binario real de `tshock-mcp`.
+3. Completa el handshake MCP por stdio.
+4. Invoca `events_since` con y sin cursor, con el límite máximo y con argumentos inválidos.
+5. Verifica el sobre, la exclusividad del cursor, `hasMore`, `cursor_expired` con `details`, que los
+   argumentos inválidos no llegan al puente y que el token no aparece en `stderr`.
+6. Apaga el puente y comprueba que `events_since` degrada a `bridge_unavailable` mientras las tools
+   REST siguen funcionando.
 
-La variante contra el servidor real repite las mismas llamadas con el plugin cargado y un jugador
-conectado. No se acepta una feature del puente solo por haberla probado con `curl`.
+Cuando existan las tools de región, se agregan al mismo arnés. La variante contra el servidor real
+repite las mismas llamadas con el plugin cargado y un jugador conectado. No se acepta una feature del
+puente solo por haberla probado con `curl`.
 
 ## Definición de terminado
 
@@ -105,11 +108,11 @@ conectado. No se acepta una feature del puente solo por haberla probado con `cur
 
 | Pieza | Unidad | Plugin HTTP | MCP stdio | Servidor real |
 | --- | --- | --- | --- | --- |
-| 18 tools REST de Fase 0 | Sí | No aplica | Sí: catálogo y casos representativos (17 checks) | Sí |
+| 18 tools REST de Fase 0 | Sí | No aplica | Sí: catálogo y casos representativos | Sí |
 | Regiones del puente | No | Verificado manualmente | No existe tool | Parcial: crear, leer y borrar |
 | Eventos del puente | Sí (`EventBuffer`) | Verificado manualmente | No existe tool | Parcial: región, entrada y comando |
-| `BridgeClient` | No existe | No aplica | No existe | No |
-| `events_since` | No existe | No aplica | No existe | No |
+| `BridgeClient` | Sí (falso HTTP) | No aplica | Sí | No |
+| `events_since` | Sí (validación) | No aplica | Sí: backlog, cursor, 410, argumentos y degradación | Pendiente |
 | Tools de región | No existen | No aplica | No existen | No |
 
 Esta tabla debe actualizarse en el mismo cambio que la funcionalidad. Si una fila dice «No existe»,

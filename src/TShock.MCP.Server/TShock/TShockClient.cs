@@ -13,8 +13,6 @@ namespace TShock.McpServer.TShock;
 /// </summary>
 public sealed class TShockClient : ITShockClient
 {
-    private const int MaxResponseBytes = 5 * 1024 * 1024;
-    private const int MaxErrorMessageLength = 500;
     private const string TooLargeMessage = "The TShock response exceeded the 5 MB limit.";
     private const string NetworkErrorPrefix = "Could not reach the TShock server: ";
 
@@ -39,7 +37,7 @@ public sealed class TShockClient : ITShockClient
         CancellationToken cancellationToken = default)
     {
         // The audit trail records the route only, never the query values.
-        var auditPath = StripQuery(path);
+        var auditPath = HttpPayload.StripQuery(path);
         var stopwatch = Stopwatch.StartNew();
 
         TShockResult result;
@@ -104,7 +102,7 @@ public sealed class TShockClient : ITShockClient
         builder.Append(_options.BaseUrl.GetLeftPart(UriPartial.Path).TrimEnd('/'));
         builder.Append('/');
 
-        builder.Append(StripQuery(path).TrimStart('/'));
+        builder.Append(HttpPayload.StripQuery(path).TrimStart('/'));
 
         var parameters = new List<string>();
         if (query is not null)
@@ -138,18 +136,18 @@ public sealed class TShockClient : ITShockClient
 
         // The reason phrase is server-controlled text: it may echo the token and
         // can be arbitrarily long, so it is sanitized and capped before use.
-        var reasonPhrase = Truncate(
+        var reasonPhrase = HttpPayload.Truncate(
             Sanitize(
                 string.IsNullOrWhiteSpace(response.ReasonPhrase)
                     ? response.StatusCode.ToString()
                     : response.ReasonPhrase));
 
-        if (response.Content.Headers.ContentLength is { } contentLength && contentLength > MaxResponseBytes)
+        if (response.Content.Headers.ContentLength is { } contentLength && contentLength > HttpPayload.MaxResponseBytes)
         {
             return TShockResult.TransportError("response_too_large", TooLargeMessage, statusCode);
         }
 
-        var body = await ReadBodyAsync(response.Content, cancellationToken).ConfigureAwait(false);
+        var body = await HttpPayload.ReadBodyAsync(response.Content, cancellationToken).ConfigureAwait(false);
         if (body is null)
         {
             return TShockResult.TransportError("response_too_large", TooLargeMessage, statusCode);
@@ -171,14 +169,14 @@ public sealed class TShockClient : ITShockClient
         try
         {
             node = JsonNode.Parse(payload);
-            ValidateNoDuplicateKeys(node);
+            HttpPayload.ValidateNoDuplicateKeys(node);
         }
         catch (Exception ex) when (ex is JsonException or ArgumentException)
         {
             // JsonNode reports duplicate property keys with ArgumentException, not
             // JsonException (on .NET 8 only once the object is materialized), so
             // both failures share the same mapping.
-            var detail = Truncate(
+            var detail = HttpPayload.Truncate(
                 $"TShock returned HTTP {statusCode} ({reasonPhrase}) with a body that is not valid JSON: {Sanitize(payload)}");
 
             return isSuccess
@@ -191,7 +189,7 @@ public sealed class TShockClient : ITShockClient
         {
             return TShockResult.RestError(
                 statusCode,
-                Truncate(
+                HttpPayload.Truncate(
                     string.IsNullOrWhiteSpace(errorMessage)
                         ? $"TShock returned HTTP {statusCode} ({reasonPhrase})."
                         : Sanitize(errorMessage)));
@@ -203,58 +201,6 @@ public sealed class TShockClient : ITShockClient
         }
 
         return TShockResult.Success(statusCode, ResponseRedactor.Redact(node, redactIps: !_options.ShowIps));
-    }
-
-    /// <summary>
-    /// Forces every parsed object to materialize so duplicate property keys are
-    /// rejected deterministically: on .NET 8 the <see cref="ArgumentException"/>
-    /// only surfaces on the first property access, not during parsing.
-    /// </summary>
-    private static void ValidateNoDuplicateKeys(JsonNode? node)
-    {
-        switch (node)
-        {
-            case JsonObject jsonObject:
-                foreach (var property in jsonObject)
-                {
-                    ValidateNoDuplicateKeys(property.Value);
-                }
-
-                break;
-            case JsonArray jsonArray:
-                foreach (var element in jsonArray)
-                {
-                    ValidateNoDuplicateKeys(element);
-                }
-
-                break;
-        }
-    }
-
-    private static async Task<string?> ReadBodyAsync(HttpContent content, CancellationToken cancellationToken)
-    {
-        await using var stream = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-
-        using var buffer = new MemoryStream();
-        var chunk = new byte[8192];
-
-        while (true)
-        {
-            var read = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false);
-            if (read == 0)
-            {
-                break;
-            }
-
-            if (buffer.Length + read > MaxResponseBytes)
-            {
-                return null;
-            }
-
-            buffer.Write(chunk, 0, read);
-        }
-
-        return Encoding.UTF8.GetString(buffer.ToArray());
     }
 
     private static bool TryGetError(JsonObject jsonObject, out string? message)
@@ -294,7 +240,7 @@ public sealed class TShockClient : ITShockClient
         {
             return TShockResult.TransportError(
                 "network_error",
-                Truncate(NetworkErrorPrefix + Sanitize(exception.Message)));
+                HttpPayload.Truncate(NetworkErrorPrefix + Sanitize(exception.Message)));
         }
 
         // Diagnose the unexpected failure without the stack trace and without the
@@ -302,7 +248,7 @@ public sealed class TShockClient : ITShockClient
         _logger.LogWarning(
             "TShock call failed with an unexpected {ExceptionType}: {Message}",
             exception.GetType().Name,
-            Truncate(Sanitize(exception.Message)));
+            HttpPayload.Truncate(Sanitize(exception.Message)));
 
         return TShockResult.TransportError("unexpected_error", exception.GetType().Name);
     }
@@ -332,18 +278,4 @@ public sealed class TShockClient : ITShockClient
         return sanitized;
     }
 
-    /// <summary>
-    /// Caps a message at <see cref="MaxErrorMessageLength"/> characters in total,
-    /// including the trailing ellipsis.
-    /// </summary>
-    private static string Truncate(string value) =>
-        value.Length <= MaxErrorMessageLength
-            ? value
-            : string.Concat(value.AsSpan(0, MaxErrorMessageLength - 3), "...");
-
-    private static string StripQuery(string path)
-    {
-        var separatorIndex = path.IndexOf('?', StringComparison.Ordinal);
-        return separatorIndex >= 0 ? path[..separatorIndex] : path;
-    }
 }

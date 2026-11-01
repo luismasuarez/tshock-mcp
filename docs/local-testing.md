@@ -500,8 +500,10 @@ El token de `~/.config/tshock-mcp/token` se puede conservar para la próxima pru
 
 **No valida:**
 
-- Regiones y eventos del puente: §11 prueba el plugin por HTTP, no por MCP. La aceptación MCP
-  queda pendiente hasta que existan `BridgeClient` y `BridgeTools`.
+- Regiones: §11 prueba el plugin por HTTP, no por MCP. La aceptación MCP de las tools de región
+  queda pendiente hasta que existan.
+- Eventos del puente: `events_since` ya se acepta por MCP contra un puente falso; la verificación
+  contra el servidor real con jugadores conectados sigue pendiente.
 - Descubrimiento y ejecución de comandos (Fase 1).
 - Transporte HTTP y OAuth (Fase 2).
 
@@ -515,9 +517,9 @@ Esta sección valida el plugin `TShock.AgentBridge` contra el servidor real. El 
 está en [`bridge.md`](bridge.md).
 
 > **No es la prueba de aceptación de una tool MCP.** Aquí se llama directamente a
-> `127.0.0.1:7879` con el token del puente. El gateway todavía no consume el puente. La aceptación
-> de `events_since` y de las tools de región se hará por MCP, según
-> [`testing.md`](testing.md).
+> `127.0.0.1:7879` con el token del puente. `events_since` se acepta por MCP en la e2e con un puente
+> falso y se verifica contra el servidor real llamando a la tool, no a este endpoint. Las tools de
+> región aún no existen. Consulte [`testing.md`](testing.md).
 
 ### Desplegar el plugin
 

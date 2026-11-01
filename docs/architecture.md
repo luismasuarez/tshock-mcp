@@ -11,7 +11,7 @@ Fase 1 agrega un plugin opcional que se describe en [bridge.md](bridge.md).
 +------------------------------+        MCP (JSON-RPC sobre stdio)        +------------------------------+
 | Anfitrión de IA              |  ----------------------------------->   | tshock-mcp                   |
 | Claude Desktop / VS Code /   |                                         |  - Servidor MCP (stdio)      |
-| Cursor / cliente MCP         |  <-----------------------------------   |  - 18 herramientas           |
+| Cursor / cliente MCP         |  <-----------------------------------   |  - 19 herramientas           |
 +------------------------------+        stdout: JSON-RPC, stderr: logs   |  - Cliente HTTP de TShock    |
                                                                          |  - Sobre de resultados       |
                                                                          +--------------+---------------+
@@ -26,25 +26,24 @@ Fase 1 agrega un plugin opcional que se describe en [bridge.md](bridge.md).
 
 ## Capas y estado actual
 
-La Fase 0 está completa. La Fase 1 tiene el plugin, pero **no** la capa MCP que lo consume:
+La Fase 0 está completa. La Fase 1 tiene el plugin y su primer consumidor MCP:
 
 ```
 +------------------+   MCP/stdio   +----------------------+   REST 7878   +-------------+
 | Cliente MCP      |<------------->| tshock-mcp           |<------------->| TShock      |
 +------------------+               | 18 tools REST        |               +-------------+
-                                   |                      |
-                                   | (sin BridgeClient)   |
-                                   +----------x-----------+
-                                              | no implementado
-                                   +----------+-----------+
-                                   | AgentBridge 7879     |
-                                   | regiones + eventos   |
-                                   +----------------------+
+                                   | 1 tool del puente    |
+                                   | + BridgeClient       |   HTTP 7879   +-------------+
+                                   +----------------------+<------------->| AgentBridge |
+                                                                          | regiones +  |
+                                                                          | eventos     |
+                                                                          +-------------+
 ```
 
-Hoy el plugin solo se consulta con HTTP directo en pruebas. Ninguna tool MCP lo usa, así que el
-agente no puede leer eventos ni operar regiones. El corte vertical pendiente es
-`tool MCP -> BridgeClient -> HTTP /v1/* -> plugin`; ver [`testing.md`](testing.md).
+`events_since` es la primera tool que consume el puente: `tool MCP -> BridgeClient -> HTTP /v1/events
+-> plugin`. El resto de las rutas del plugin siguen siendo capa inferior hasta que exista su tool, y
+la degradación está probada: con el puente caído, las 18 tools REST siguen funcionando. Ver
+[`testing.md`](testing.md).
 
 Componentes internos:
 
@@ -56,6 +55,8 @@ Componentes internos:
 | `TShock/ToolResults` | Serializa el sobre estable `ok` / `error`. |
 | `Tools/ReadTools.cs` | 12 herramientas sin efectos secundarios. |
 | `Tools/WriteTools.cs` | 6 herramientas de mutación, bloqueadas salvo que se habilite la escritura. |
+| `TShock/IBridgeClient` | Cliente del puente: bearer por petición, tope de respuesta y códigos de error estables. |
+| `Tools/BridgeTools.cs` | Herramientas del puente, hoy `events_since`. Siempre registradas; sin puente responden `bridge_unavailable`. |
 
 ## Por qué una puerta de enlace externa
 

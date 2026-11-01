@@ -69,7 +69,7 @@ src/TShock.MCP.Server/
   Program.cs                     Arranque, host, logging a stderr, registro de herramientas
   Configuration/TShockOptions.cs Lectura y validación de variables de entorno
   TShock/                        Cliente REST, auditoría, redacción y sobre de resultados
-  Tools/                         ReadTools.cs y WriteTools.cs
+  Tools/                         ReadTools.cs, WriteTools.cs y BridgeTools.cs
 src/TShock.AgentBridge/          Plugin de Fase 1 (net9.0): bridge, dispatcher, regiones y eventos
 tests/
   TShock.MCP.Server.Tests/       Suite xUnit del gateway
@@ -104,11 +104,10 @@ API REST. Una tool del puente no está terminada hasta que se prueba por MCP.
 
 1. Confirme que la ruta existe en `src/TShock.AgentBridge/BridgeServer.cs` y que está documentada
    en `docs/bridge.md`. Si no existe, primero se agrega y se prueba en el plugin.
-2. Agregue el método correspondiente a `BridgeClient` (cliente HTTP del puente; todavía no existe,
-   se crea con la primera tool). No construya `HttpClient` ad hoc; use el token del puente, timeout
-   propio y límite de tamaño de respuesta. Nunca registre el token ni la URL completa con
-   credenciales.
-3. Declare la tool en `Tools/BridgeTools.cs` (el archivo se crea con la primera tool) con
+2. Amplíe `TShock/BridgeClient.cs` (y su interfaz `IBridgeClient`) si hace falta un verbo nuevo. No
+   construya `HttpClient` ad hoc; use el token del puente, timeout propio y límite de tamaño de
+   respuesta. Nunca registre el token ni la URL completa con credenciales.
+3. Declare la tool en `Tools/BridgeTools.cs` con
    `[McpServerTool]`, nombre en `snake_case` y una `[Description]` en inglés. Separe lectura y
    escritura; las de escritura comprueban `options.AllowWrite` y devuelven `write_disabled`.
 4. Valide los argumentos antes de la red y traduzca los errores del puente a códigos estables del

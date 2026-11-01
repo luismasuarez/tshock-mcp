@@ -39,13 +39,14 @@ public sealed class AuditLog
         int statusCode,
         bool ok,
         long elapsedMilliseconds,
-        string? errorCode)
+        string? errorCode,
+        string method = "GET")
     {
         var entry = new AuditEntry
         {
             Timestamp = DateTime.UtcNow,
             Operation = operation,
-            Method = "GET",
+            Method = method,
             Path = StripQuery(path),
             StatusCode = statusCode,
             Ok = ok,
@@ -57,8 +58,9 @@ public sealed class AuditLog
         if (string.IsNullOrWhiteSpace(logPath))
         {
             _logger.LogInformation(
-                "tshock-audit {Operation} GET {Path} status={StatusCode} ok={Ok} elapsedMs={ElapsedMs} errorCode={ErrorCode}",
+                "tshock-audit {Operation} {Method} {Path} status={StatusCode} ok={Ok} elapsedMs={ElapsedMs} errorCode={ErrorCode}",
                 entry.Operation,
+                entry.Method,
                 entry.Path,
                 entry.StatusCode,
                 entry.Ok,

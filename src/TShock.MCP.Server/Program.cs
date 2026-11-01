@@ -44,6 +44,24 @@ builder.Services.AddSingleton<ITShockClient>(services => new TShockClient(
     options,
     services.GetRequiredService<ILogger<TShockClient>>()));
 
+// The bridge is optional: when it is not configured the client is still
+// registered and every bridge tool answers bridge_unavailable, so the agent gets
+// an explanation instead of a missing tool.
+builder.Services.AddSingleton<IBridgeClient>(services =>
+{
+    var http = new HttpClient(new SocketsHttpHandler { AllowAutoRedirect = false })
+    {
+        Timeout = options.Bridge?.Timeout ?? TimeSpan.FromSeconds(10)
+    };
+
+    if (options.Bridge is { } bridge)
+    {
+        http.BaseAddress = bridge.BaseUrl;
+    }
+
+    return new BridgeClient(http, options, services.GetRequiredService<ILogger<BridgeClient>>());
+});
+
 builder.Services
     .AddMcpServer()
     .WithStdioServerTransport()
@@ -130,16 +148,27 @@ internal static class CallToolErrors
 
         if (options is not null)
         {
-            if (!string.IsNullOrEmpty(options.Token))
+            foreach (var secret in new[] { options.Token, options.Bridge?.Token })
             {
-                message = message
-                    .Replace(options.Token, "***", StringComparison.Ordinal)
-                    .Replace(Uri.EscapeDataString(options.Token), "***", StringComparison.Ordinal);
+                if (!string.IsNullOrEmpty(secret))
+                {
+                    message = message
+                        .Replace(secret, "***", StringComparison.Ordinal)
+                        .Replace(Uri.EscapeDataString(secret), "***", StringComparison.Ordinal);
+                }
             }
 
-            message = message
-                .Replace(options.BaseUrl.ToString(), "<base-url>", StringComparison.Ordinal)
-                .Replace(options.BaseUrl.GetLeftPart(UriPartial.Authority), "<base-url>", StringComparison.Ordinal);
+            foreach (var baseUrl in new[] { options.BaseUrl, options.Bridge?.BaseUrl })
+            {
+                if (baseUrl is null)
+                {
+                    continue;
+                }
+
+                message = message
+                    .Replace(baseUrl.ToString(), "<base-url>", StringComparison.Ordinal)
+                    .Replace(baseUrl.GetLeftPart(UriPartial.Authority), "<base-url>", StringComparison.Ordinal);
+            }
         }
 
         return message.Length <= MaxLoggedMessageLength

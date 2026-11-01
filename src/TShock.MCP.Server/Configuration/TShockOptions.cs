@@ -10,6 +10,9 @@ public sealed record TShockOptions
 {
     public const string DefaultBaseUrl = "http://127.0.0.1:7878";
 
+    /// <summary>Loopback port published by the AgentBridge plugin.</summary>
+    public const string DefaultBridgeUrl = "http://127.0.0.1:7879";
+
     public required Uri BaseUrl { get; init; }
 
     /// <summary>
@@ -31,6 +34,12 @@ public sealed record TShockOptions
 
     /// <summary>Optional JSONL audit log destination. Logs go to stderr when unset.</summary>
     public string? AuditLogPath { get; init; }
+
+    /// <summary>
+    /// AgentBridge connection. Null when no <c>TSHOCK_BRIDGE_*</c> variable is set,
+    /// which keeps the gateway fully usable against the REST API alone.
+    /// </summary>
+    public BridgeOptions? Bridge { get; init; }
 
     public static TShockOptions FromEnvironment()
     {
@@ -92,8 +101,119 @@ public sealed record TShockOptions
             ShowIps = GetBool("TSHOCK_MCP_SHOW_IPS", false),
             AllowInsecure = allowInsecure,
             Timeout = TimeSpan.FromSeconds(timeoutSeconds),
-            AuditLogPath = Get("TSHOCK_MCP_AUDIT_LOG")
+            AuditLogPath = Get("TSHOCK_MCP_AUDIT_LOG"),
+            Bridge = ReadBridgeOptions(allowInsecure)
         };
+    }
+
+    /// <summary>
+    /// Reads the AgentBridge settings. The bridge is optional: when no
+    /// <c>TSHOCK_BRIDGE_*</c> variable is present the gateway starts in REST-only
+    /// mode. A partial configuration is an error rather than a silent fallback, so
+    /// an operator never believes the bridge is enabled when it is not.
+    /// </summary>
+    private static BridgeOptions? ReadBridgeOptions(bool allowInsecure)
+    {
+        var rawUrl = Get("TSHOCK_BRIDGE_URL");
+        var rawToken = Get("TSHOCK_BRIDGE_TOKEN");
+        var rawTokenFile = Get("TSHOCK_BRIDGE_TOKEN_FILE");
+        var rawTimeout = Get("TSHOCK_BRIDGE_TIMEOUT_SECONDS");
+
+        if (rawUrl is null && rawToken is null && rawTokenFile is null && rawTimeout is null)
+        {
+            return null;
+        }
+
+        var url = rawUrl ?? DefaultBridgeUrl;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var bridgeUrl) ||
+            (bridgeUrl.Scheme != Uri.UriSchemeHttp && bridgeUrl.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new ConfigurationException(
+                "TSHOCK_BRIDGE_URL must be an absolute http(s) URL, for example http://127.0.0.1:7879.");
+        }
+
+        // Same reasoning as the REST base URL: the client appends its own route,
+        // so extras in the base URL would change where the request goes.
+        if (bridgeUrl.Query.Length > 0)
+        {
+            throw new ConfigurationException("TSHOCK_BRIDGE_URL must not contain a query string.");
+        }
+
+        if (bridgeUrl.Fragment.Length > 0)
+        {
+            throw new ConfigurationException("TSHOCK_BRIDGE_URL must not contain a fragment.");
+        }
+
+        if (bridgeUrl.UserInfo.Length > 0)
+        {
+            throw new ConfigurationException(
+                "TSHOCK_BRIDGE_URL must not embed credentials (userinfo); configure TSHOCK_BRIDGE_TOKEN instead.");
+        }
+
+        if (bridgeUrl.Scheme == Uri.UriSchemeHttp && !bridgeUrl.IsLoopback && !allowInsecure)
+        {
+            throw new ConfigurationException(
+                "Refusing to send the bridge token over plain HTTP to a non-loopback host. " +
+                "Use HTTPS or set TSHOCK_MCP_ALLOW_INSECURE=true if you understand the risk.");
+        }
+
+        var token = rawToken ?? ReadTokenFile(rawTokenFile);
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            throw new ConfigurationException(
+                "TSHOCK_BRIDGE_TOKEN or TSHOCK_BRIDGE_TOKEN_FILE is required when any other " +
+                "TSHOCK_BRIDGE_* variable is set.");
+        }
+
+        var timeoutSeconds = 10;
+        if (rawTimeout is not null)
+        {
+            if (!int.TryParse(rawTimeout, NumberStyles.Integer, CultureInfo.InvariantCulture, out timeoutSeconds))
+            {
+                throw new ConfigurationException(
+                    "TSHOCK_BRIDGE_TIMEOUT_SECONDS must be an integer number of seconds, for example 10.");
+            }
+
+            if (timeoutSeconds is < 1 or > 300)
+            {
+                throw new ConfigurationException("TSHOCK_BRIDGE_TIMEOUT_SECONDS must be between 1 and 300.");
+            }
+        }
+
+        return new BridgeOptions
+        {
+            BaseUrl = new Uri(bridgeUrl.ToString().TrimEnd('/') + "/", UriKind.Absolute),
+            Token = token.Trim(),
+            Timeout = TimeSpan.FromSeconds(timeoutSeconds)
+        };
+    }
+
+    /// <summary>
+    /// Reads the bridge secret from a file so it can be mounted as a read-only
+    /// secret. The content is never logged; only the path appears in an error.
+    /// </summary>
+    private static string? ReadTokenFile(string? path)
+    {
+        if (path is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            if (!File.Exists(path))
+            {
+                throw new ConfigurationException(
+                    "TSHOCK_BRIDGE_TOKEN_FILE does not point to an existing file.");
+            }
+
+            return File.ReadAllText(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            throw new ConfigurationException(
+                $"TSHOCK_BRIDGE_TOKEN_FILE could not be read ({ex.GetType().Name}); check the path and its permissions.");
+        }
     }
 
     private static string? Get(string name)
@@ -126,6 +246,20 @@ public sealed record TShockOptions
 
         return seconds;
     }
+}
+
+/// <summary>
+/// Connection settings for the loopback AgentBridge plugin. The bridge token is a
+/// separate secret from the TShock REST token so one leak cannot reach both surfaces.
+/// </summary>
+public sealed record BridgeOptions
+{
+    public required Uri BaseUrl { get; init; }
+
+    /// <summary>Bridge bearer secret. Never logged, never returned by a tool.</summary>
+    public required string Token { get; init; }
+
+    public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(10);
 }
 
 public sealed class ConfigurationException(string message) : Exception(message);
