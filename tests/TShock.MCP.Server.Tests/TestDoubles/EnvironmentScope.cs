@@ -16,6 +16,7 @@ internal sealed class EnvironmentScope : IDisposable
         "TSHOCK_MCP_SHOW_IPS",
         "TSHOCK_MCP_TIMEOUT_SECONDS",
         "TSHOCK_MCP_AUDIT_LOG",
+        "TSHOCK_MCP_ALLOW_ELICITATION",
         "TSHOCK_BRIDGE_URL",
         "TSHOCK_BRIDGE_TOKEN",
         "TSHOCK_BRIDGE_TOKEN_FILE",

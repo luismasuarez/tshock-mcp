@@ -132,6 +132,7 @@ public sealed class TShockOptionsTests
         Assert.False(options.AllowWrite);
         Assert.False(options.ShowIps);
         Assert.False(options.AllowInsecure);
+        Assert.True(options.AllowElicitation);
         Assert.Equal(TimeSpan.FromSeconds(15), options.Timeout);
         Assert.Null(options.AuditLogPath);
     }
@@ -199,6 +200,19 @@ public sealed class TShockOptionsTests
         var options = TShockOptions.FromEnvironment();
 
         Assert.Equal(TimeSpan.FromSeconds(15), options.Timeout);
+    }
+
+    [Fact]
+    public void FromEnvironment_CanDisableElicitation()
+    {
+        using var env = new EnvironmentScope();
+        env.ClearAll();
+        env.Set("TSHOCK_TOKEN", "token");
+        env.Set("TSHOCK_MCP_ALLOW_ELICITATION", "false");
+
+        var options = TShockOptions.FromEnvironment();
+
+        Assert.False(options.AllowElicitation);
     }
 
     [Fact]

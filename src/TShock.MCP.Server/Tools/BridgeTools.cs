@@ -195,7 +195,7 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
         // Ask the human only when the client declared elicitation on this request.
         // The model cannot skip the question by omitting a boolean.
         switch (DecideDelete(
-                    CanElicit(server),
+                    options.AllowElicitation && CanElicit(server),
                     AnsweredConfirmation(context?.Params?.InputResponses),
                     confirm))
         {

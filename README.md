@@ -243,6 +243,7 @@ con `--network host` use `http://127.0.0.1:7878` y omita la variable de inseguri
 | `TSHOCK_MCP_ALLOW_INSECURE` | `false` | Permite HTTP sin cifrar hacia un host que no es de loopback. Envía el token en claro. |
 | `TSHOCK_MCP_TIMEOUT_SECONDS` | `15` | Tiempo máximo de espera HTTP, entre 1 y 300. Un valor no numérico o fuera de rango impide el arranque. |
 | `TSHOCK_MCP_AUDIT_LOG` | *(sin definir)* | Ruta opcional a un registro de auditoría JSONL. |
+| `TSHOCK_MCP_ALLOW_ELICITATION` | `true` | Permite que las tools destructivas pidan confirmación al humano por *elicitation*. Con `false` nunca preguntan y exigen el argumento `confirm: true`. Útil cuando el host declara la capacidad pero su UI no muestra el diálogo en un modo concreto. |
 | `TSHOCK_BRIDGE_URL` | `http://127.0.0.1:7879` | URL base del plugin `TShock.AgentBridge`. Si **ninguna** variable `TSHOCK_BRIDGE_*` está definida, el puente queda deshabilitado y sus herramientas responden `bridge_unavailable`. |
 | `TSHOCK_BRIDGE_TOKEN` | *(sin definir en línea)* | Token del puente. Distinto del token REST de TShock. |
 | `TSHOCK_BRIDGE_TOKEN_FILE` | *(sin definir)* | Archivo con el token del puente, preferido sobre la variable en línea para no exponerlo en `docker inspect` o `ps`. |

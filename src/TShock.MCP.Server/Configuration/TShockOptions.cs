@@ -27,6 +27,13 @@ public sealed record TShockOptions
     /// <summary>When false, any "ip" field in a response is redacted.</summary>
     public bool ShowIps { get; init; }
 
+    /// <summary>
+    /// When false, destructive tools never ask the client for confirmation and
+    /// require the explicit flag instead. Operator escape hatch for hosts whose
+    /// elicitation prompt is unreachable in a given client mode.
+    /// </summary>
+    public bool AllowElicitation { get; init; } = true;
+
     /// <summary>Allow plain HTTP to a non-loopback host (not recommended).</summary>
     public bool AllowInsecure { get; init; }
 
@@ -99,6 +106,7 @@ public sealed record TShockOptions
             Token = token,
             AllowWrite = GetBool("TSHOCK_MCP_ALLOW_WRITE", false),
             ShowIps = GetBool("TSHOCK_MCP_SHOW_IPS", false),
+            AllowElicitation = GetBool("TSHOCK_MCP_ALLOW_ELICITATION", true),
             AllowInsecure = allowInsecure,
             Timeout = TimeSpan.FromSeconds(timeoutSeconds),
             AuditLogPath = Get("TSHOCK_MCP_AUDIT_LOG"),

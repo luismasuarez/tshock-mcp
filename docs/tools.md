@@ -271,6 +271,8 @@ Comportamiento:
 - **Confirmación.** `region_delete` pide confirmación al humano mediante *elicitation* si el cliente
   declara esa capacidad. Si el cliente no puede preguntar, exige `confirm: true`; sin él devuelve
   `confirmation_required`. Si el humano rechaza, devuelve `confirmation_declined` y no borra nada.
+  `TSHOCK_MCP_ALLOW_ELICITATION=false` desactiva la pregunta por completo y deja siempre el camino de
+  `confirm: true`; es la salida para hosts que declaran la capacidad pero no muestran el diálogo.
 
 ## Catálogo actual y herramientas pendientes
 

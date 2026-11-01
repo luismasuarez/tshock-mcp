@@ -25,7 +25,7 @@ detalles de entorno que no son evidentes desde el código.
 | Configuración | Solo variables de entorno, validación estricta al arrancar |
 | Seguridad | Escritura desactivada por defecto, token nunca registrado, IP y credenciales redactadas |
 | Contrato de salida | Sobre JSON estable `ok` / `error` |
-| Pruebas | 212 pruebas xUnit (181 del gateway y 31 del puente) y 52 comprobaciones e2e por stdio |
+| Pruebas | 213 pruebas xUnit (182 del gateway y 31 del puente) y 52 comprobaciones e2e por stdio |
 | Verificación real | Lectura, escritura, errores y redacción probados con un cliente de Terraria en la LAN |
 | Privilegio mínimo | Grupo dedicado `mcp-rest` sin permisos de escritura; la escritura tiene dos barreras (flag del gateway y permisos de TShock) |
 | Distribución | Dockerfile multi-stage y workflow de CI |
@@ -68,7 +68,7 @@ dotnet test -c Release --no-build
 python3 tests/e2e/mcp_stdio_smoke.py
 ```
 
-Resultados esperados: 0 advertencias, 212 pruebas superadas y `E2E PASSED` con 52 comprobaciones.
+Resultados esperados: 0 advertencias, 213 pruebas superadas y `E2E PASSED` con 52 comprobaciones.
 La prueba e2e cubre las 18 tools REST de la Fase 0 y las 5 tools del puente contra un puente falso.
 
 ---
@@ -334,7 +334,7 @@ log. La comprobación de que el pump de respaldo queda inactivo es el propio con
 
 | Criterio | Estado |
 | --- | --- |
-| La suite de Fase 0 sigue en verde sin cambios de contrato. | Hecho: 212 pruebas y 52 checks e2e. |
+| La suite de Fase 0 sigue en verde sin cambios de contrato. | Hecho: 213 pruebas y 52 checks e2e. |
 | El plugin carga en TShock 6.2.1 y se descarga sin dejar hilos ni puertos abiertos. | Hecho para la carga; la descarga en caliente no existe. |
 | Crear y eliminar una región desde MCP se refleja en el servidor. | Hecho y verificado contra TShock 6.2.1.0, con elicitation real. |
 | `events_since` devuelve eventos ordenados y estables entre reconexiones. | Hecho con puente falso (unitarias y e2e); falta la verificación con jugadores reales. |
@@ -740,6 +740,15 @@ con el binario real y los secretos leídos de archivos:
   solo tras aceptar.
 - `events_since` emitió `region.created` y `region.deleted` con sus cursores.
 - El token del puente no apareció en `stderr`.
+
+Validación final con el **servidor MCP del host** (OpenCode), no con arneses externos: 23 tools en el
+catálogo, `write_disabled` con la escritura apagada, creación con propietario por defecto,
+`owner_not_allowed`, `confirmation_required`, borrado con `confirm` y `region_not_found`.
+
+Trampa: OpenCode declara `elicitation` pero el diálogo no llega a la ejecución en modo Code, así que
+`region_delete` se queda esperando respuesta. Se añadió `TSHOCK_MCP_ALLOW_ELICITATION` (default
+`true`); con `false` la tool exige `confirm: true` y no pregunta. El camino de elicitation sí está
+probado de extremo a extremo en la e2e y contra el servidor real con un cliente que responde.
 
 Pendiente de la fase: `CommandCatalog` y `GET /v1/commands`.
 
