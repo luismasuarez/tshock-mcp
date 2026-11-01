@@ -6,7 +6,7 @@ mutaciones.
 
 La Fase 1 agrega de forma aditiva **herramientas del puente** que hablan con el plugin
 `TShock.AgentBridge` por HTTP en loopback. Hoy existe una, `events_since`, así que el catálogo total
-es de **19 herramientas**. Las 18 de la Fase 0 conservan su nombre, sus rutas y su semántica.
+es de **21 herramientas**. Las 18 de la Fase 0 conservan su nombre, sus rutas y su semántica.
 
 Convenciones de la tabla:
 
@@ -236,6 +236,8 @@ loopback, con un token propio distinto del token REST. Su contrato HTTP está en
 | Herramienta | Propósito | Ruta | Argumentos | Efectos |
 | --- | --- | --- | --- | --- |
 | `events_since` | Eventos del servidor posteriores a un cursor **exclusivo**: entradas, salidas, chat, comandos, muertes, jefes y cambios de región. | `GET /v1/events` | `cursor` (opcional, entero `>= 0`), `limit` (opcional, 1–500, 100 por defecto) | Ninguno. Solo lectura |
+| `regions_list` | Regiones del mundo actual con área, propietario, protección y listas de usuarios y grupos permitidos. | `GET /v1/regions` | — | Ninguno. Solo lectura |
+| `region_info` | Una región por su nombre exacto. Devuelve `region_not_found` si no existe. | `GET /v1/regions/{name}` | `name` (nombre exacto, máximo 128 caracteres, sin `/` ni caracteres de control) | Ninguno. Solo lectura |
 
 Comportamiento:
 
@@ -245,9 +247,10 @@ Comportamiento:
 - **Paginación.** `hasMore` indica si quedan eventos posteriores. El límite máximo por llamada es
   500.
 - **Errores.** `bridge_unavailable` (puente apagado o sin configurar), `bridge_timeout`,
-  `bridge_auth_error`, `bridge_error` y `cursor_expired`. Este último agrega un objeto `details`
-  dentro de `error` con `reason` (`evicted` o `unknown`), `oldest`, `head`, `resumeCursor` y
-  `session`, para que el agente reanude sin adivinar.
+  `bridge_auth_error`, `bridge_error`, `cursor_expired` y `region_not_found`. `cursor_expired`
+  agrega un objeto `details` dentro de `error` con `reason` (`evicted` o `unknown`), `oldest`,
+  `head`, `resumeCursor` y `session`, para que el agente reanude sin adivinar. `region_not_found`
+  solo significa que el nombre pedido no existe: un fallo del puente sigue siendo `bridge_error`.
 - **Sin puente configurado**, la herramienta sigue en el catálogo y responde `bridge_unavailable`.
   Un agente que no ve la herramienta no puede diagnosticar nada; un error explicado sí.
 - **Contenido no confiable.** Los eventos con texto que un jugador puede influir traen
@@ -256,15 +259,13 @@ Comportamiento:
 
 ## Catálogo actual y herramientas pendientes
 
-Las 19 herramientas de las secciones anteriores son las únicas que el agente puede invocar hoy: 18
-contra la API REST y 1 contra el puente.
+Las 21 herramientas de las secciones anteriores son las únicas que el agente puede invocar hoy: 18
+contra la API REST y 3 contra el puente.
 
 Pendientes de implementar:
 
 | Tool prevista | Origen | Tipo | Estado |
 | --- | --- | --- | --- |
-| `regions_list` | `GET /v1/regions` del puente | Lectura | No existe |
-| `region_info` | `GET /v1/regions/{name}` del puente | Lectura | No existe |
 | `region_create` | `POST /v1/regions` del puente | Escritura | No existe |
 | `region_delete` | `DELETE /v1/regions/{name}` del puente | Escritura destructiva | No existe |
 | `commands_list` | `GET /v1/commands` del puente | Lectura | No existe |

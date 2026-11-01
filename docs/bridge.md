@@ -5,13 +5,15 @@ eventos del servidor. Corre **dentro** del proceso de TShock y escucha en loopba
 sigue siendo el único proceso que habla MCP.
 
 > **Estado.** Regiones (`GET`, `GET` por nombre, `POST`, `DELETE`) y eventos con cursor
-> (`GET /v1/events`) están implementados y verificados contra TShock 6.2.1.0. El gateway ya consume
-> `GET /v1/events` mediante la herramienta `events_since`. Las herramientas de región, el
-> descubrimiento de comandos y la ejecución con allowlist todavía no existen.
+> (`GET /v1/events`) están implementados y verificados contra TShock 6.2.1.0. El gateway consume
+> `GET /v1/events`, `GET /v1/regions` y `GET /v1/regions/{name}` con `events_since`, `regions_list` y
+> `region_info`. La escritura de regiones, el descubrimiento de comandos y la ejecución con allowlist
+> todavía no existen.
 >
-> **Este documento describe la capa HTTP del plugin.** La única ruta invocable hoy por el agente es
-> `/v1/events`, a través de `events_since`; el resto sigue siendo capa inferior hasta que exista su
-> tool. Las pruebas por `curl` no son la aceptación MCP; consulte [`testing.md`](testing.md).
+> **Este documento describe la capa HTTP del plugin.** Las rutas invocables hoy por el agente son
+> `/v1/events`, `/v1/regions` y `/v1/regions/{name}`, a través de sus tres tools; el resto sigue
+> siendo capa inferior hasta que exista la suya. Las pruebas por `curl` no son la aceptación MCP;
+> consulte [`testing.md`](testing.md).
 
 ## Despliegue
 
@@ -245,20 +247,33 @@ Las rutas de regiones ejecutan toda la lógica en el hilo del juego a través de
 
 Los nombres de región se decodifican con `Uri.UnescapeDataString`.
 
+**Casing.** Todo el puente emite camelCase: los eventos lo declaran con `JsonPropertyName` y los
+registros de región lo obtienen de la política del serializador. Un `RegionDto` se ve así:
+
+```json
+{"id": 3, "name": "spawn", "x": 100, "y": 100, "width": 20, "height": 20,
+ "owner": "mcp-gateway", "disableBuild": true, "z": 0,
+ "allowedIds": [], "allowedGroups": []}
+```
+
+`tests/TShock.AgentBridge.Tests/SerializationContractTests.cs` fija este contrato: sin esa prueba, un
+cambio de serialización puede devolver PascalCase al gateway sin que nada falle.
+
 ## Lo que todavía no existe
 
 - `GET /v1/commands` y la allowlist de ejecución.
 - `POST /v1/commands/execute`.
 - `GET /v1/config`.
-- Las herramientas MCP de región (`regions_*`) y de comandos (`commands_list`, `config_get`,
-  `run_command`). `events_since` ya existe y es la única tool que consume el puente.
+- La escritura de regiones (`region_create`, `region_delete`) y las tools de comandos
+  (`commands_list`, `config_get`, `run_command`). `events_since`, `regions_list` y `region_info` ya
+  existen.
 - Notificaciones push o streaming. El cliente consulta con su cursor.
 - Persistencia de eventos entre reinicios.
 
 ## Cómo lo consume el gateway
 
-`events_since` llama a `GET /v1/events` a través de `TShock/BridgeClient.cs`, que se autentica con
-`Authorization: Bearer`, nunca pone el token en la URL y traduce las respuestas a los códigos
-estables del sobre MCP (`bridge_unavailable`, `bridge_timeout`, `bridge_auth_error`, `bridge_error`,
-`cursor_expired`). La configuración del gateway se documenta en el
-[README](../README.md#variables-de-entorno).
+`events_since`, `regions_list` y `region_info` llaman al puente a través de
+`TShock/BridgeClient.cs`, que se autentica con `Authorization: Bearer`, nunca pone el token en la URL
+y traduce las respuestas a los códigos estables del sobre MCP (`bridge_unavailable`, `bridge_timeout`,
+`bridge_auth_error`, `bridge_error`, `cursor_expired`, `region_not_found`). La configuración del
+gateway se documenta en el [README](../README.md#variables-de-entorno).

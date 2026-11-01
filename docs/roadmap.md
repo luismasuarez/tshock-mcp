@@ -25,11 +25,11 @@ detalles de entorno que no son evidentes desde el código.
 | Configuración | Solo variables de entorno, validación estricta al arrancar |
 | Seguridad | Escritura desactivada por defecto, token nunca registrado, IP y credenciales redactadas |
 | Contrato de salida | Sobre JSON estable `ok` / `error` |
-| Pruebas | 175 pruebas xUnit (152 del gateway y 23 del puente) y 31 comprobaciones e2e por stdio |
+| Pruebas | 186 pruebas xUnit (161 del gateway y 25 del puente) y 36 comprobaciones e2e por stdio |
 | Verificación real | Lectura, escritura, errores y redacción probados con un cliente de Terraria en la LAN |
 | Privilegio mínimo | Grupo dedicado `mcp-rest` sin permisos de escritura; la escritura tiene dos barreras (flag del gateway y permisos de TShock) |
 | Distribución | Dockerfile multi-stage y workflow de CI |
-| Puente Fase 1 | Plugin `TShock.AgentBridge` cargado en TShock 6.2.1.0; regiones y eventos con cursor verificados por HTTP. `BridgeClient` y `events_since` implementados; tools de región y comandos pendientes |
+| Puente Fase 1 | Plugin `TShock.AgentBridge` cargado en TShock 6.2.1.0; regiones y eventos con cursor verificados por HTTP. `events_since`, `regions_list` y `region_info` implementados; escritura de regiones y comandos pendientes |
 
 ### Estado por capas de la Fase 1
 
@@ -41,7 +41,8 @@ puente, así que regiones y eventos **no** están disponibles desde el cliente M
 | Plugin: regiones y eventos | Implementado | HTTP directo y unitarias del buffer |
 | `BridgeClient` en el gateway | Implementado | Unitarias con HTTP falso y e2e |
 | Tool `events_since` | Implementada | E2E MCP por stdio con puente falso |
-| Tools de región | No existen | — |
+| Tools de región de lectura | Implementadas | Unitarias y E2E con puente falso |
+| Tools de región de escritura | No existen | — |
 | E2E MCP del puente | Existe para `events_since` | `mcp_stdio_smoke.py` con puente falso |
 | Verificación real del plugin | Parcial: región, `player.join` y `command` | HTTP directo; faltan chat, muerte, jefe y salida |
 
@@ -66,8 +67,8 @@ dotnet test -c Release --no-build
 python3 tests/e2e/mcp_stdio_smoke.py
 ```
 
-Resultados esperados: 0 advertencias, 175 pruebas superadas y `E2E PASSED` con 31 comprobaciones.
-La prueba e2e cubre las 18 tools REST de la Fase 0 y `events_since` contra un puente falso.
+Resultados esperados: 0 advertencias, 186 pruebas superadas y `E2E PASSED` con 36 comprobaciones.
+La prueba e2e cubre las 18 tools REST de la Fase 0 y las 3 tools del puente contra un puente falso.
 
 ---
 
@@ -320,7 +321,8 @@ log. La comprobación de que el pump de respaldo queda inactivo es el propio con
 - [x] Añadir la suite xUnit del ring buffer (23 pruebas, `tests/TShock.AgentBridge.Tests`).
 - [x] Añadir `BridgeClient` y `BridgeTools` al gateway; empezar por `events_since`.
 - [x] Añadir la prueba MCP por stdio del puente (`events_since`) con un puente falso.
-- [ ] **Siguiente:** añadir las tools de región al gateway, con escritura condicionada y confirmación al borrar.
+- [x] Añadir las tools de región de lectura (`regions_list`, `region_info`).
+- [ ] **Siguiente:** añadir la escritura de regiones, con política de propietario y confirmación al borrar.
 - [ ] Añadir `CommandCatalog` y `/v1/commands`.
 - [ ] Probar en un servidor TShock real la recarga, la desconexión del bridge y la concurrencia de
       eventos con jugadores conectados.
@@ -330,9 +332,9 @@ log. La comprobación de que el pump de respaldo queda inactivo es el propio con
 
 | Criterio | Estado |
 | --- | --- |
-| La suite de Fase 0 sigue en verde sin cambios de contrato. | Hecho: 175 pruebas y 31 checks e2e. |
+| La suite de Fase 0 sigue en verde sin cambios de contrato. | Hecho: 186 pruebas y 36 checks e2e. |
 | El plugin carga en TShock 6.2.1 y se descarga sin dejar hilos ni puertos abiertos. | Hecho para la carga; la descarga en caliente no existe. |
-| Crear y eliminar una región desde MCP se refleja en el servidor. | Pendiente: hoy solo existe la ruta HTTP del plugin. |
+| Crear y eliminar una región desde MCP se refleja en el servidor. | Pendiente: la lectura ya está; la escritura solo existe en la ruta HTTP del plugin. |
 | `events_since` devuelve eventos ordenados y estables entre reconexiones. | Hecho con puente falso (unitarias y e2e); falta la verificación con jugadores reales. |
 | Un bridge caído no impide usar las tools REST. | Hecho y probado en la e2e: `bridge_unavailable` sin afectar a REST. |
 | Ninguna mutación se ejecuta fuera del hilo principal. | Hecho en las rutas de región del plugin. |
@@ -472,7 +474,7 @@ src/TShock.MCP.Server/
   TShock/BridgeClient.cs         Cliente HTTP del puente y códigos de error
   Tools/ReadTools.cs             12 tools de lectura
   Tools/WriteTools.cs            6 tools de escritura
-  Tools/BridgeTools.cs           1 tool del puente (events_since)
+  Tools/BridgeTools.cs           3 tools del puente (eventos y lectura de regiones)
 src/TShock.AgentBridge/          Plugin de Fase 1 (net9.0)
   AgentBridgePlugin.cs           Arranque, hooks de ciclo de vida
   BridgeServer.cs                HTTP loopback, auth y rutas
@@ -481,8 +483,8 @@ src/TShock.AgentBridge/          Plugin de Fase 1 (net9.0)
   EventBuffer.cs                 Ring buffer y contrato de cursor
   EventService.cs                Suscripción a hooks y publicación
 tests/
-  TShock.MCP.Server.Tests/       Suite xUnit del gateway (152)
-  TShock.AgentBridge.Tests/      Suite xUnit del puente (23)
+  TShock.MCP.Server.Tests/       Suite xUnit del gateway (161)
+  TShock.AgentBridge.Tests/      Suite xUnit del puente (25)
   e2e/mcp_stdio_smoke.py         Prueba de extremo a extremo
 docs/                            Arquitectura, bridge, tools, testing, seguridad, roadmap
 .github/pull_request_template.md Checklist de la definición de terminado
@@ -653,6 +655,27 @@ Trampas de esta sesión:
 - Verificar `Content-Length` antes de leer evita descargar un cuerpo enorme solo para rechazarlo.
 - Los tests de configuración comparten el entorno del proceso: las variables nuevas tienen que
   entrar en `EnvironmentScope.Names` o se filtran entre pruebas.
+
+### Continuación: lectura de regiones desde MCP (1 de noviembre de 2026)
+
+- `regions_list` y `region_info` sobre `GET /v1/regions` y `GET /v1/regions/{name}`.
+- Código nuevo `region_not_found` (404) solo para «la región pedida no existe». Un fallo del puente
+  sigue siendo `bridge_error`; la distinción permite al agente ofrecer una corrección en vez de
+  reintentar.
+- Validación antes de la red: nombre vacío, de más de 128 caracteres, con `/` o con caracteres de
+  control devuelve `invalid_argument` y no llega al puente. El nombre se escapa como segmento único.
+- 9 pruebas nuevas (161 en el gateway) y 5 checks nuevos (36 en total).
+- Bug de contrato encontrado al verificar en vivo: el puente serializaba los registros de región en
+  PascalCase (`"Name"`) mientras los eventos iban en camelCase. La e2e con puente falso no lo
+  detectaba porque el falso ya usaba camelCase. Corregido con una política de serialización común en
+  `BridgeServer`, más 2 pruebas de contrato en el proyecto del puente (25 en total).
+
+Verificado contra el servidor real **por MCP**, con el binario real y los secretos leídos de archivos:
+
+- El catálogo expone 19 tools en ese momento y `events_since` devuelve el backlog real.
+- Ya capturados: `player.join`, `chat`, `command`, `boss.kill` (King Slime, `netId` 50) y
+  `player.leave`. Falta `player.death`.
+- El token del puente no aparece en `stderr`.
 
 ### No objetivos
 

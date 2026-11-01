@@ -15,7 +15,7 @@ herramientas de solo lectura y de escritura acotadas, con escritura deshabilitad
 | Fase | Alcance | Estado |
 | --- | --- | --- |
 | Fase 0 | Transporte stdio, 18 herramientas, configuración por variables de entorno, sin cambios en TShock | **Implementada y verificada** |
-| Fase 1 | Puente (*bridge*) con TShock: regiones, eventos y descubrimiento de comandos | **En curso:** plugin con regiones y eventos; `events_since` disponible; tools de región y comandos pendientes |
+| Fase 1 | Puente (*bridge*) con TShock: regiones, eventos y descubrimiento de comandos | **En curso:** plugin con regiones y eventos; eventos y lectura de regiones disponibles; escritura de regiones y comandos pendientes |
 | Fase 2 | Transporte HTTP y OAuth 2.1 para despliegues remotos | Futura, no implementada |
 
 La Fase 0 está verificada contra un servidor real (TShock 6.2.1.0, Terraria 1.4.5.8) con un cliente
@@ -23,13 +23,13 @@ en la LAN: lectura, las 6 herramientas de escritura, mapeo de errores y redacci�
 sentidos. El procedimiento reproducible está en [`docs/local-testing.md`](docs/local-testing.md).
 
 La Fase 1 ya tiene un plugin (`TShock.AgentBridge`) que carga en TShock y expone regiones y eventos
-por HTTP en loopback. El gateway consume ese puente con la herramienta `events_since`, así que un
-agente puede leer los eventos del servidor con un cursor. Las herramientas de región y el
-descubrimiento de comandos todavía no existen. El contrato del puente está en
-[`docs/bridge.md`](docs/bridge.md).
+por HTTP en loopback. El gateway consume ese puente con `events_since`, `regions_list` y
+`region_info`: un agente puede leer los eventos del servidor con un cursor y consultar las regiones
+del mundo. La escritura de regiones y el descubrimiento de comandos todavía no existen. El contrato
+del puente está en [`docs/bridge.md`](docs/bridge.md).
 
-**No** existen hoy soporte HTTP, OAuth, herramientas MCP de región, descubrimiento de comandos ni
-ejecución de comandos arbitrarios.
+**No** existen hoy soporte HTTP, OAuth, herramientas MCP para crear o borrar regiones, descubrimiento
+de comandos ni ejecución de comandos arbitrarios.
 
 ## Arquitectura
 
@@ -289,12 +289,15 @@ Puente (Fase 1), solo lectura, con el plugin `TShock.AgentBridge`:
 | Herramienta | Propósito |
 | --- | --- |
 | `events_since` | Eventos del servidor posteriores a un cursor exclusivo: entradas, salidas, chat, comandos, muertes, jefes y cambios de región. Devuelve el cursor para la siguiente llamada. |
+| `regions_list` | Regiones del mundo actual con área, propietario y permisos. |
+| `region_info` | Una región por nombre exacto; `region_not_found` si no existe. |
 
 Rutas, permisos, argumentos y ejemplos completos en [docs/tools.md](docs/tools.md).
 
-Estas 19 son las únicas herramientas MCP existentes: 18 REST y 1 del puente. Las herramientas de
-región (`regions_*`) y de comandos (`commands_list`, `config_get`, `run_command`) todavía no existen;
-cuando se implementen, se agregarán a esta sección y a `docs/tools.md`.
+Estas 21 son las únicas herramientas MCP existentes: 18 REST y 3 del puente. La escritura de
+regiones (`region_create`, `region_delete`) y las herramientas de comandos (`commands_list`,
+`config_get`, `run_command`) todavía no existen; cuando se implementen, se agregarán a esta sección y
+a `docs/tools.md`.
 
 Toda herramienta devuelve una cadena JSON con un sobre estable:
 
@@ -328,7 +331,7 @@ Antes de habilitar escritura, revise [docs/security.md](docs/security.md).
 
 ## Pruebas
 
-Suite unitaria, sin red (175 pruebas: 152 del gateway y 23 del puente):
+Suite unitaria, sin red (186 pruebas: 161 del gateway y 25 del puente):
 
 ```bash
 dotnet test -c Release
@@ -344,10 +347,10 @@ python3 tests/e2e/mcp_stdio_smoke.py
 
 La prueba e2e requiere Python 3 y verifica el sobre de salida, la redacción de IP y credenciales, el
 bloqueo de escritura, el mapeo de un 403 de TShock, el cursor de `events_since` y la degradación a
-`bridge_unavailable` cuando el puente no responde (31 comprobaciones). Es multiplataforma: usa hilos
+`bridge_unavailable` cuando el puente no responde (36 comprobaciones). Es multiplataforma: usa hilos
 y una cola para leer la salida del proceso, sin depender de `select`.
 
-Cubre las 18 tools REST y `events_since`; las tools de región todavía no existen. La matriz de capas
+Cubre las 18 tools REST y las 3 herramientas del puente; la escritura de regiones todavía no existe. La matriz de capas
 y la definición de terminado están en [docs/testing.md](docs/testing.md).
 
 ## Solución de problemas
@@ -375,7 +378,7 @@ Un token con permisos de escritura equivale a control operativo del servidor.
   y mapeo de errores.
 - [docs/bridge.md](docs/bridge.md): contrato del puente de Fase 1 (regiones y eventos con cursor).
 - [docs/testing.md](docs/testing.md): capas de prueba, comandos y definición de terminado.
-- [docs/tools.md](docs/tools.md): referencia completa de las 19 herramientas.
+- [docs/tools.md](docs/tools.md): referencia completa de las 21 herramientas.
 - [docs/security.md](docs/security.md): modelo de amenazas y guía para operadores.
 - [docs/roadmap.md](docs/roadmap.md): estado, decisiones, fases siguientes y contexto para retomar.
 - [docs/local-testing.md](docs/local-testing.md): guía paso a paso para probar con TShock y OpenCode.

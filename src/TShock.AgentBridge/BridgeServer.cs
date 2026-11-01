@@ -17,6 +17,17 @@ internal sealed class BridgeServer : IDisposable
     private const string PluginName = "TShock.AgentBridge";
     private const string PluginVersion = "0.1.0";
 
+    /// <summary>
+    /// One casing for the whole bridge. Explicit <c>JsonPropertyName</c> attributes
+    /// win over the policy, so event and request payloads keep their names while
+    /// region records (plain positional records) become camelCase like everything
+    /// else instead of letting PascalCase leak into the contract.
+    /// </summary>
+    internal static readonly JsonSerializerOptions SerializerOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
     private readonly HttpListener _listener = new();
     private readonly byte[] _token;
     private readonly MainThreadDispatcher _dispatcher;
@@ -342,7 +353,7 @@ internal sealed class BridgeServer : IDisposable
 
     private static async Task WriteAsync(HttpListenerContext context, int statusCode, object payload)
     {
-        var body = JsonSerializer.SerializeToUtf8Bytes(payload);
+        var body = JsonSerializer.SerializeToUtf8Bytes(payload, SerializerOptions);
         context.Response.StatusCode = statusCode;
         context.Response.ContentType = "application/json; charset=utf-8";
         context.Response.ContentLength64 = body.Length;

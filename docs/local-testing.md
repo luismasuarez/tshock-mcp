@@ -500,8 +500,8 @@ El token de `~/.config/tshock-mcp/token` se puede conservar para la próxima pru
 
 **No valida:**
 
-- Regiones: §11 prueba el plugin por HTTP, no por MCP. La aceptación MCP de las tools de región
-  queda pendiente hasta que existan.
+- Regiones: la lectura ya se acepta por MCP contra un puente falso (`regions_list`, `region_info`);
+  §11 prueba el plugin por HTTP y sirve para aislar la capa que falla. La escritura sigue pendiente.
 - Eventos del puente: `events_since` ya se acepta por MCP contra un puente falso; la verificación
   contra el servidor real con jugadores conectados sigue pendiente.
 - Descubrimiento y ejecución de comandos (Fase 1).

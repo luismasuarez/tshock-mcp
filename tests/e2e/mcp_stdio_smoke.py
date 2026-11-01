@@ -22,7 +22,7 @@ import sys
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DLL = REPO_ROOT / "src" / "TShock.MCP.Server" / "bin" / "Release" / "net8.0" / "tshock-mcp.dll"
@@ -30,6 +30,19 @@ TOKEN = "secret-token"
 BRIDGE_TOKEN = "bridge-secret-token"
 seen: list[tuple[str, dict[str, list[str]]]] = []
 bridge_seen: list[str] = []
+
+REGIONS = [
+    {
+        "id": 1, "name": "spawn", "x": 100, "y": 100, "width": 40, "height": 20,
+        "owner": "mcp-gateway", "disableBuild": False, "z": 0,
+        "allowedIds": [], "allowedGroups": [],
+    },
+    {
+        "id": 2, "name": "mi arena", "x": 400, "y": 200, "width": 20, "height": 20,
+        "owner": "alice", "disableBuild": True, "z": 0,
+        "allowedIds": [], "allowedGroups": ["guest"],
+    },
+]
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -86,6 +99,19 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
         if self.headers.get("Authorization") != f"Bearer {BRIDGE_TOKEN}":
             self._json(401, {"error": "unauthorized"})
+            return
+
+        if parsed.path == "/v1/regions":
+            self._json(200, {"regions": REGIONS})
+            return
+
+        if parsed.path.startswith("/v1/regions/"):
+            name = unquote(parsed.path[len("/v1/regions/"):])
+            region = next((item for item in REGIONS if item["name"] == name), None)
+            if region is None:
+                self._json(404, {"error": "region_not_found"})
+            else:
+                self._json(200, region)
             return
 
         if parsed.path != "/v1/events":
@@ -224,11 +250,16 @@ def run(
         results["events_max_limit"] = call(11, "events_since", {"limit": 500})
         results["events_bad_cursor"] = raw_call(12, "events_since", {"cursor": -5})
         results["events_bad_limit"] = raw_call(13, "events_since", {"limit": 0})
+        results["regions"] = call(14, "regions_list", {})
+        results["region"] = call(15, "region_info", {"name": "spawn"})
+        results["region_spaced"] = call(16, "region_info", {"name": "mi arena"})
+        results["region_missing"] = call(17, "region_info", {"name": "nope"})
+        results["region_bad_name"] = raw_call(18, "region_info", {"name": ""})
 
-    send({"jsonrpc": "2.0", "id": 14, "method": "tools/list", "params": {}})
+    send({"jsonrpc": "2.0", "id": 19, "method": "tools/list", "params": {}})
     while True:
         message = read_message(messages)
-        if message.get("id") == 14:
+        if message.get("id") == 19:
             results["tools"] = {tool["name"]: tool for tool in message["result"]["tools"]}
             break
     proc.stdin.close()
@@ -331,7 +362,23 @@ def main() -> int:
             check(bad_cursor["error"]["code"] == "invalid_argument" and
                   bad_limit["error"]["code"] == "invalid_argument",
                   "invalid cursor and limit keep the invalid_argument envelope")
-            check(len(bridge_seen) - before == 4,
+
+            check(len(results["regions"]["data"]["regions"]) == 2,
+                  "regions_list returns every bridge region")
+            check(results["region"]["data"]["owner"] == "mcp-gateway",
+                  "region_info returns the full region record")
+            check(results["region_spaced"]["data"]["name"] == "mi arena",
+                  "region_info escapes names with spaces into one path segment")
+            check(results["region_missing"]["error"]["code"] == "region_not_found" and
+                  results["region_missing"]["error"]["httpStatus"] == 404,
+                  "a missing region maps to region_not_found with 404")
+            bad_name = json.loads(results["region_bad_name"]["content"][0]["text"])
+            check(bad_name["error"]["code"] == "invalid_argument",
+                  "an empty region name keeps the invalid_argument envelope")
+
+            # 4 events reads + regions_list + region_info(spawn) + region_info(mi arena)
+            # + region_info(nope). The two invalid calls must not appear here.
+            check(len(bridge_seen) - before == 8,
                   "invalid arguments never reach the bridge")
             check(BRIDGE_TOKEN not in stderr, "bridge token never appears in stderr")
 

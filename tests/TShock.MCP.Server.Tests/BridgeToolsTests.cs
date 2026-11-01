@@ -128,6 +128,95 @@ public sealed class BridgeToolsTests
     }
 
     [Fact]
+    public async Task RegionsList_CallsTheRegionsRoute()
+    {
+        var (tools, client) = Arrange();
+
+        var output = await tools.RegionsList();
+
+        var call = Assert.Single(client.Calls);
+        Assert.Equal("regions_list", call.Operation);
+        Assert.Equal("/v1/regions", call.Path);
+        Assert.Null(call.Query);
+
+        var envelope = Assert.IsType<JsonObject>(JsonNode.Parse(output));
+        Assert.True(envelope["ok"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public async Task RegionInfo_EscapesTheNameIntoSinglePathSegment()
+    {
+        var (tools, client) = Arrange();
+
+        await tools.RegionInfo("mi arena/1");
+
+        // A slash is rejected before the network; this call never happens.
+        Assert.Empty(client.Calls);
+
+        var (tools2, client2) = Arrange();
+        await tools2.RegionInfo("mi arena");
+        Assert.Equal("/v1/regions/mi%20arena", Assert.Single(client2.Calls).Path);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("spawn/child")]
+    [InlineData("spawn\nchild")]
+    public async Task RegionInfo_RejectsUnusableNamesBeforeTheNetwork(string name)
+    {
+        var (tools, client) = Arrange();
+
+        var output = await tools.RegionInfo(name);
+
+        AssertInvalidArgument(output, "name");
+        Assert.Empty(client.Calls);
+    }
+
+    [Fact]
+    public async Task RegionInfo_RejectsNamesOverTheLimit()
+    {
+        var (tools, client) = Arrange();
+
+        var output = await tools.RegionInfo(new string('a', 129));
+
+        AssertInvalidArgument(output, "name");
+        Assert.Empty(client.Calls);
+    }
+
+    [Fact]
+    public async Task RegionInfo_MapsAMissingRegionToItsOwnCode()
+    {
+        var (tools, client) = Arrange();
+        client.Result = BridgeResult.Failure(
+            "bridge_error",
+            "The bridge returned HTTP 404 (region_not_found).",
+            404);
+
+        var output = await tools.RegionInfo("spwan");
+
+        var envelope = Assert.IsType<JsonObject>(JsonNode.Parse(output));
+        Assert.False(envelope["ok"]!.GetValue<bool>());
+        var error = Assert.IsType<JsonObject>(envelope["error"]);
+        Assert.Equal("region_not_found", error["code"]!.GetValue<string>());
+        Assert.Equal(404, error["httpStatus"]!.GetValue<int>());
+        Assert.Contains("spwan", error["message"]!.GetValue<string>(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RegionInfo_DoesNotRewriteOtherBridgeFailures()
+    {
+        var (tools, client) = Arrange();
+        client.Result = BridgeResult.Failure("bridge_unavailable", "The TShock bridge is not configured.");
+
+        var output = await tools.RegionInfo("spawn");
+
+        var error = Assert.IsType<JsonObject>(
+            Assert.IsType<JsonObject>(JsonNode.Parse(output))["error"]);
+        Assert.Equal("bridge_unavailable", error["code"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task EventsSince_ReportsAnUnconfiguredBridge()
     {
         var tools = new BridgeTools(new RecordingBridgeClient
