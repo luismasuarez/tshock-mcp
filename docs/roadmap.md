@@ -676,9 +676,17 @@ Trampas de esta sesión:
 Verificado contra el servidor real **por MCP**, con el binario real y los secretos leídos de archivos:
 
 - El catálogo expone 19 tools en ese momento y `events_since` devuelve el backlog real.
-- Ya capturados: `player.join`, `chat`, `command`, `boss.kill` (King Slime, `netId` 50) y
-  `player.leave`. Falta `player.death`.
+- Los ocho tipos de evento quedaron capturados por MCP contra el servidor real: `player.join`,
+  `player.leave`, `chat`, `command`, `boss.kill` (King Slime, `netId` 50) y `player.death`
+  (`pvp: false`). `region.created` y `region.deleted` ya se habían verificado en la sesión anterior
+  por HTTP.
+- `player.death` se generó con una muerte real en el juego. `kill_player` por REST devuelve `403`:
+  el grupo `mcp-rest` no tiene `tshock.rest.kill`, que es el privilegio mínimo funcionando.
 - El token del puente no aparece en `stderr`.
+
+Trampa: un apagado del contenedor **no** emite `player.leave`. TShock no dispara el hook de salida
+durante el shutdown, así que tras un reinicio lo primero que se ve es el `player.join` de la
+reconexión.
 
 ### Continuación: escritura de regiones y confirmación (1 de noviembre de 2026)
 
