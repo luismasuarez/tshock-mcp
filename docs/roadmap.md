@@ -338,7 +338,8 @@ Estrategia: un fork de TShock solo para ramas de PR (`feat/rest-v4-commands`,
 2. `README.md` — uso y estado.
 3. `docs/architecture.md` — diseño de la Fase 0.
 4. `docs/security.md` — modelo de amenazas.
-5. Este documento — plan y contexto.
+5. `docs/local-testing.md` — guía para levantar TShock y probar en OpenCode.
+6. Este documento — plan y contexto.
 
 ### Comandos
 
@@ -349,6 +350,9 @@ dotnet build -c Release
 dotnet test -c Release --no-build
 python3 tests/e2e/mcp_stdio_smoke.py
 ```
+
+Para levantar TShock y registrar el MCP en OpenCode, sigue
+[`local-testing.md`](local-testing.md).
 
 ### Mapa de archivos
 
