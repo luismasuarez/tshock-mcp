@@ -10,7 +10,9 @@ Decisiones tomadas para esta prueba:
 - **Solo lectura primero**; la escritura se habilita en una segunda pasada.
 
 Al terminar, el agente podrá consultar el estado del servidor, jugadores, mundo, cuentas, grupos y
-prohibiciones. Las regiones, eventos y comandos quedan para la Fase 1.
+prohibiciones. Las regiones y los eventos se prueban por HTTP contra el plugin (§11); su aceptación
+MCP queda pendiente hasta que existan las tools. El descubrimiento y la ejecución de comandos siguen
+pendientes.
 
 ---
 
@@ -498,8 +500,101 @@ El token de `~/.config/tshock-mcp/token` se puede conservar para la próxima pru
 
 **No valida:**
 
-- Regiones y eventos (Fase 1).
+- Regiones y eventos del puente: §11 prueba el plugin por HTTP, no por MCP. La aceptación MCP
+  queda pendiente hasta que existan `BridgeClient` y `BridgeTools`.
 - Descubrimiento y ejecución de comandos (Fase 1).
 - Transporte HTTP y OAuth (Fase 2).
 
 El plan de las fases siguientes está en [`roadmap.md`](roadmap.md).
+
+---
+
+## 11. Probar el plugin por HTTP (capa inferior)
+
+Esta sección valida el plugin `TShock.AgentBridge` contra el servidor real. El contrato completo
+está en [`bridge.md`](bridge.md).
+
+> **No es la prueba de aceptación de una tool MCP.** Aquí se llama directamente a
+> `127.0.0.1:7879` con el token del puente. El gateway todavía no consume el puente. La aceptación
+> de `events_since` y de las tools de región se hará por MCP, según
+> [`testing.md`](testing.md).
+
+### Desplegar el plugin
+
+```bash
+dotnet build src/TShock.AgentBridge -c Release
+
+cp src/TShock.AgentBridge/bin/Release/net9.0/TShock.AgentBridge.dll \
+   "$HOME/.local/share/tshock-mcp/plugins/"
+
+docker restart tshock-test
+docker logs tshock-test | grep AgentBridge   # "initiated."
+```
+
+No hay recarga en caliente. El contenedor debe publicar el puente solo en loopback:
+`-p 127.0.0.1:7879:7879`. El token del puente se monta como archivo y es distinto del token REST.
+
+### Autenticar sin exponer el token
+
+Guarde la cabecera en un archivo temporal con permisos `600` para que el token no quede en el
+historial del intérprete ni en la lista de procesos:
+
+```bash
+umask 077
+printf 'header = "Authorization: Bearer %s"\n' \
+  "$(cat "$HOME/.config/tshock-mcp/bridge-token")" \
+  > /tmp/tshock-bridge-auth.curl
+chmod 600 /tmp/tshock-bridge-auth.curl
+```
+
+Bórrelo al terminar con `rm /tmp/tshock-bridge-auth.curl`.
+
+### Comprobaciones
+
+```bash
+B=http://127.0.0.1:7879
+
+# Estado, mundo y estadísticas del buffer
+curl -sS -K /tmp/tshock-bridge-auth.curl "$B/v1/health" | python3 -m json.tool
+
+# Página vacía en un buffer recién iniciado: cursor 0, head 0, oldest 1
+curl -sS -K /tmp/tshock-bridge-auth.curl "$B/v1/events" | python3 -m json.tool
+
+# Crear y eliminar una región de prueba; cada operación genera un evento.
+# Si la región ya existe de una prueba anterior, bórrela primero o use otro nombre.
+curl -sS -K /tmp/tshock-bridge-auth.curl -X POST -H 'Content-Type: application/json' \
+  --data '{"name":"bridge-event-test","x":100,"y":100,"width":10,"height":10}' \
+  "$B/v1/regions"
+
+curl -sS -K /tmp/tshock-bridge-auth.curl "$B/v1/events" | python3 -m json.tool
+
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  -K /tmp/tshock-bridge-auth.curl -X DELETE "$B/v1/regions/bridge-event-test"
+
+# Paginación y errores
+curl -sS -K /tmp/tshock-bridge-auth.curl "$B/v1/events?cursor=0&limit=1" | python3 -m json.tool
+curl -sS -K /tmp/tshock-bridge-auth.curl -o /dev/null -w '%{http_code}\n' \
+  "$B/v1/events?cursor=abc"                    # 400
+curl -sS -K /tmp/tshock-bridge-auth.curl -o /dev/null -w '%{http_code}\n' \
+  "$B/v1/events?cursor=999999"                 # 410 cursor_expired
+curl -sS -o /dev/null -w '%{http_code}\n' "$B/v1/events"   # 401 sin bearer
+```
+
+Resultados esperados:
+
+- `region.created` y `region.deleted` con cursores consecutivos, `untrusted: true` y el nombre de la
+  región.
+- `limit=1` devuelve un evento y `hasMore: true`.
+- `cursor=abc` devuelve `400 invalid_cursor`; un cursor posterior a `head` devuelve
+  `410 cursor_expired` con `reason: "unknown"`.
+- `401` sin la cabecera `Authorization`.
+
+Los eventos de jugador (`player.join`, `player.leave`, `chat`, `command`, `player.death`,
+`boss.kill`) requieren un cliente de Terraria conectado. Sin jugadores, el servidor no los genera y
+la prueba se limita a regiones y al contrato del cursor. Con un cliente:
+
+- Al entrar se emite `player.join` y, al salir, `player.leave`.
+- Al ejecutar `/setup <código>` se emite `command` con `{"command":"setup"}`: el código no aparece.
+  Es la comprobación de que los argumentos se descartan.
+- Al hablar se emite `chat` con `untrusted: true`; al morir, `player.death`; al matar un jefe,
+  `boss.kill`.

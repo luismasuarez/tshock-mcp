@@ -1,10 +1,11 @@
-# Arquitectura — Fase 0
+# Arquitectura
 
 ## Visión general
 
 `tshock-mcp` es un proceso local de .NET 8 que actúa como **puerta de enlace** entre un anfitrión
 MCP y la API REST de TShock. No se instala dentro del servidor de Terraria, no modifica TShock y no
-necesita plugins adicionales: se comunica con la API REST que TShock ya expone.
+necesita plugins adicionales para la Fase 0: se comunica con la API REST que TShock ya expone. La
+Fase 1 agrega un plugin opcional que se describe en [bridge.md](bridge.md).
 
 ```
 +------------------------------+        MCP (JSON-RPC sobre stdio)        +------------------------------+
@@ -22,6 +23,28 @@ necesita plugins adicionales: se comunica con la API REST que TShock ya expone.
                                                                          |  - REST API habilitada       |
                                                                          +------------------------------+
 ```
+
+## Capas y estado actual
+
+La Fase 0 está completa. La Fase 1 tiene el plugin, pero **no** la capa MCP que lo consume:
+
+```
++------------------+   MCP/stdio   +----------------------+   REST 7878   +-------------+
+| Cliente MCP      |<------------->| tshock-mcp           |<------------->| TShock      |
++------------------+               | 18 tools REST        |               +-------------+
+                                   |                      |
+                                   | (sin BridgeClient)   |
+                                   +----------x-----------+
+                                              | no implementado
+                                   +----------+-----------+
+                                   | AgentBridge 7879     |
+                                   | regiones + eventos   |
+                                   +----------------------+
+```
+
+Hoy el plugin solo se consulta con HTTP directo en pruebas. Ninguna tool MCP lo usa, así que el
+agente no puede leer eventos ni operar regiones. El corte vertical pendiente es
+`tool MCP -> BridgeClient -> HTTP /v1/* -> plugin`; ver [`testing.md`](testing.md).
 
 Componentes internos:
 
@@ -119,11 +142,14 @@ Reglas del sobre:
 ## Fuera de alcance en la Fase 0
 
 - Transporte HTTP y OAuth 2.1 (Fase 2).
-- Puente con TShock para regiones, eventos y descubrimiento de comandos (Fase 1).
+- Puente con TShock para regiones, eventos y descubrimiento de comandos (Fase 1). Ya existe un
+  plugin separado con regiones y eventos; el gateway todavía no lo consume. Su contrato está en
+  [bridge.md](bridge.md).
 - Ejecución de comandos arbitrarios o `rawcmd`.
 - Apagado o reinicio del servidor de Terraria.
 - Alta, baja o modificación de usuarios, grupos y prohibiciones.
-- WebSockets, notificaciones push o eventos en tiempo real.
+- WebSockets, notificaciones push o eventos en tiempo real. El puente de Fase 1 expone consulta por
+  cursor, no push.
 - Persistencia propia: el servidor MCP no guarda estado entre ejecuciones, salvo el registro de
   auditoría si se configura.
 - Reintentos, caché de respuestas y agregación de varias llamadas.

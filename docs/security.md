@@ -52,12 +52,16 @@ en el servidor de juego. El modelo nunca ve el token ni habla directamente con T
 | Respuestas enormes o lentas | Consumo de memoria o bloqueo | Timeout configurable y límite de tamaño con `response_too_large`. |
 | Servidor TShock comprometido | Datos falsos hacia el modelo | El agente no ejecuta lo que lee; la escritura sigue limitada a 6 rutas. |
 | Dependencia NuGet comprometida | Ejecución de código en el host | Versiones fijadas, CI reproducible y revisión de actualizaciones. |
+| Fuga del token del puente | Crear o borrar regiones y leer eventos | Token propio, archivo con permisos `600`, sin TLS solo en loopback, nunca se registra y se compara en tiempo constante. |
+| Inyección de prompts desde eventos | El modelo ejecuta acciones no pedidas | `untrusted: true`, límites de longitud y la misma regla: los eventos son datos, no instrucciones. |
+| Contraseñas en eventos de comando | Fuga de credenciales al modelo y a sus registros | Solo se publica el nombre del comando; los argumentos se descartan. |
 
 ### Fuera del modelo
 
 No se cubren en la Fase 0: autenticación de múltiples usuarios del servidor MCP, autorización por
 herramienta, cuotas por cliente, aislamiento multiinquilino, OAuth 2.1 ni transporte HTTP. Un
-servidor MCP expuesto por red sin esas capas no es un despliegue soportado.
+servidor MCP expuesto por red sin esas capas no es un despliegue soportado. El puente de Fase 1
+agrega una superficie local que se describe en la sección siguiente; no cambia este límite.
 
 ## El token
 
@@ -169,6 +173,42 @@ secretos que las inyecte.
   impide el arranque con un error de configuración, en lugar de caer silenciosamente al valor por
   defecto.
 - La Fase 2 agregará transporte HTTP y OAuth 2.1 para despliegues remotos. Hoy no existen.
+
+## Puente de Fase 1
+
+El plugin `TShock.AgentBridge` expone regiones y eventos por HTTP desde dentro del proceso de
+TShock. Es una superficie **local**, no un segundo servidor público.
+
+- **Enlace.** Dentro del contenedor escucha en `0.0.0.0:7879` para que el gateway del anfitrión
+  llegue por un puerto publicado. El operador debe publicarlo solo en `127.0.0.1`:
+  `-p 127.0.0.1:7879:7879`. No hay TLS ni OAuth en esta fase; no exponga el puerto a Internet.
+- **Token propio.** Es distinto del token REST y se lee de `TSHOCK_BRIDGE_TOKEN` o de un archivo
+  montado como secreto (`TSHOCK_BRIDGE_TOKEN_FILE`, por defecto `/run/secrets/bridge-token`). El
+  plugin no lo registra en logs ni lo devuelve en respuestas, y la comparación es en tiempo
+  constante.
+- **Alcance real del token.** Hoy las rutas de región **no** validan permisos por actor: quien tenga
+  el token del puente puede crear y borrar regiones. Trátelo como una credencial administrativa del
+  servidor, guárdelo con permisos `600` y no lo entregue al modelo. La validación por actor y la
+  confirmación de operaciones destructivas están pendientes para las tools MCP.
+- **Eventos sin IP.** Los eventos no incluyen direcciones IP ni tokens. El nombre del jugador, el
+  chat, el nombre de la región y su propietario sí aparecen.
+- **Comandos sin argumentos.** El evento `command` publica solo el nombre del comando. Los
+  argumentos se descartan a propósito: `/login` y `/register` llevan contraseñas y `/msg` texto
+  privado.
+- **Contenido no confiable.** Los eventos con texto que un jugador puede influir llevan
+  `untrusted: true`. El modelo debe tratarlos como datos; consulte
+  [Inyección de prompts](#inyección-de-prompts).
+- **Límites.** El buffer retiene 10 000 eventos, cada página devuelve como máximo 500 y los textos
+  se truncan. Un cliente no puede hacer crecer el buffer sin límite. El buffer se pierde al
+  reiniciar y **no** es un registro de auditoría; para auditoría use `TSHOCK_MCP_AUDIT_LOG` en el
+  gateway o los logs de TShock.
+- **Lecturas fuera del hilo del juego.** Las lecturas de eventos no tocan el mundo. Las mutaciones de
+  región pasan por `MainThreadDispatcher` con timeout de 5 s, así que una petición no bloquea el
+  tick indefinidamente.
+- **Capa MCP pendiente.** El gateway todavía no consume el puente: ninguna tool MCP puede invocar
+  estas rutas. Cuando se agreguen, toda tool de escritura deberá comprobar
+  `TSHOCK_MCP_ALLOW_WRITE=true`, `region_delete` exigirá confirmación y el token del puente se
+  inyectará al gateway como un secreto más, nunca en la configuración versionada.
 
 ## Redacción de IP
 

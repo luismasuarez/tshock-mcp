@@ -26,7 +26,8 @@ enfoque que rechazar un pull request extenso.
 
 Requisitos:
 
-- **.NET 8 SDK.** El proyecto fija `net8.0`; no se necesita .NET 9 para el gateway.
+- **.NET 8 y .NET 9 SDK.** El gateway fija `net8.0`; el plugin y sus pruebas fijan `net9.0`. Para
+  compilar toda la solución hacen falta ambos.
 - **Python 3**, solo para la prueba de extremo a extremo.
 - **Docker**, opcional, para probar contra un TShock real.
 
@@ -41,6 +42,10 @@ python3 tests/e2e/mcp_stdio_smoke.py
 La prueba e2e requiere una compilación previa: lanza el binario real y levanta un TShock falso en un
 puerto efímero, así que no necesita un servidor de juego en ejecución. No invoque `dotnet run` para
 probar el protocolo a mano sin un cliente MCP: el proceso espera JSON-RPC por stdin.
+
+La matriz de capas y la definición de terminado están en [docs/testing.md](docs/testing.md). Una
+funcionalidad del gateway no se considera cerrada por probarla con `curl`; la aceptación es la capa
+MCP.
 
 Para probar contra un servidor TShock real, con un cliente de Terraria y con OpenCode, siga
 [docs/local-testing.md](docs/local-testing.md).
@@ -90,7 +95,8 @@ Un pull request que rompa cualquiera de estas reglas se devuelve para correcció
 6. Actualice [docs/tools.md](docs/tools.md) y la tabla resumida de [README.md](README.md). Una
    herramienta sin documentación se considera incompleta.
 7. Agregue pruebas en `tests/TShock.MCP.Server.Tests` y, si corresponde, amplíe
-   `tests/e2e/mcp_stdio_smoke.py`.
+   `tests/e2e/mcp_stdio_smoke.py`. Los cambios del puente de Fase 1 se prueban en
+   `tests/TShock.AgentBridge.Tests` y se documentan en [docs/bridge.md](docs/bridge.md).
 
 El procedimiento completo está en [AGENTS.md](AGENTS.md#cómo-agregar-una-herramienta).
 
@@ -125,11 +131,13 @@ Antes de pedir revisión, confirme que:
 - [ ] `dotnet build -c Release` termina sin advertencias nuevas.
 - [ ] `dotnet test -c Release` pasa por completo.
 - [ ] `python3 tests/e2e/mcp_stdio_smoke.py` informa `E2E PASSED` después de una compilación previa.
-- [ ] La documentación afectada está actualizada, incluidos `docs/tools.md` y el `README.md` si cambió
-      una herramienta.
+- [ ] Si la feature agrega una tool, existe una prueba MCP por stdio que la invoca; no se cerró solo
+      con `curl` al puente o a REST.
+- [ ] La documentación afectada está actualizada, incluidos `docs/tools.md`, `docs/roadmap.md` y el
+      `README.md` si cambió una herramienta.
 - [ ] No hay secretos, tokens, contraseñas, IP reales ni rutas absolutas de su máquina en el diff.
-- [ ] No se agregó ninguna herramienta fuera del alcance de la Fase 0 sin discusión previa en un
-      issue.
+- [ ] No se agregó ninguna herramienta fuera del alcance de la fase actual sin discusión previa en
+      un issue.
 - [ ] El sobre de salida y los códigos de error existentes no cambiaron; cualquier código nuevo está
       documentado.
 - [ ] No quedan marcadores pendientes ni comentarios de trabajo sin resolver.

@@ -6,7 +6,8 @@ detalles de entorno que no son evidentes desde el código.
 
 - **Repositorio:** https://github.com/luismasuarez/tshock-mcp
 - **Estado:** Fase 0 completada y verificada contra un servidor TShock real (TShock 6.2.1.0,
-  Terraria 1.4.5.8, cliente en la LAN).
+  Terraria 1.4.5.8, cliente en la LAN). Fase 1 en curso: el plugin `TShock.AgentBridge` carga y
+  expone regiones y eventos con cursor; falta la integración con el gateway.
 - **Commit de referencia:** `v0.1.0`.
 - **Fecha de cierre de la sesión:** 1 de noviembre de 2026.
 
@@ -24,16 +25,34 @@ detalles de entorno que no son evidentes desde el código.
 | Configuración | Solo variables de entorno, validación estricta al arrancar |
 | Seguridad | Escritura desactivada por defecto, token nunca registrado, IP y credenciales redactadas |
 | Contrato de salida | Sobre JSON estable `ok` / `error` |
-| Pruebas | 109 pruebas xUnit y 17 comprobaciones e2e por stdio |
+| Pruebas | 132 pruebas xUnit (109 del gateway y 23 del puente) y 17 comprobaciones e2e por stdio |
 | Verificación real | Lectura, escritura, errores y redacción probados con un cliente de Terraria en la LAN |
 | Privilegio mínimo | Grupo dedicado `mcp-rest` sin permisos de escritura; la escritura tiene dos barreras (flag del gateway y permisos de TShock) |
 | Distribución | Dockerfile multi-stage y workflow de CI |
+| Puente Fase 1 | Plugin `TShock.AgentBridge` cargado en TShock 6.2.1.0; regiones y eventos con cursor verificados por HTTP. La capa MCP (`BridgeClient` y tools) no existe |
+
+### Estado por capas de la Fase 1
+
+La capa MCP es la única que cuenta como disponible para el agente. Hoy no hay ninguna tool del
+puente, así que regiones y eventos **no** están disponibles desde el cliente MCP.
+
+| Capa | Estado | Verificado por |
+| --- | --- | --- |
+| Plugin: regiones y eventos | Implementado | HTTP directo y unitarias del buffer |
+| `BridgeClient` en el gateway | No existe | — |
+| Tool `events_since` | No existe | — |
+| Tools de región | No existen | — |
+| E2E MCP del puente | No existe | — |
+| Verificación real del plugin | Parcial: región, `player.join` y `command` | HTTP directo; faltan chat, muerte, jefe y salida |
+
+El detalle de capas y criterios está en [`testing.md`](testing.md).
 
 ### Lo que no existe todavía
 
 - Transporte HTTP y OAuth 2.1.
-- Plugin puente con TShock.
-- Regiones, eventos en tiempo real y descubrimiento de comandos.
+- Herramientas MCP que consuman el puente (`BridgeClient` y `BridgeTools`).
+- Descubrimiento y ejecución de comandos con allowlist.
+- Notificaciones push o streaming de eventos.
 - Ejecución de comandos arbitrarios, apagado, mutación de usuarios o prohibiciones.
 - Publicación en GitHub: el repositorio es local y no tiene remoto configurado.
 
@@ -46,7 +65,8 @@ dotnet test -c Release --no-build
 python3 tests/e2e/mcp_stdio_smoke.py
 ```
 
-Resultados esperados: 0 advertencias, 109 pruebas superadas y `E2E PASSED` con 17 comprobaciones.
+Resultados esperados: 0 advertencias, 132 pruebas superadas y `E2E PASSED` con 17 comprobaciones.
+La prueba e2e cubre las 18 tools REST de la Fase 0; todavía no existe una e2e MCP del puente.
 
 ---
 
@@ -55,8 +75,8 @@ Resultados esperados: 0 advertencias, 109 pruebas superadas y `E2E PASSED` con 1
 | Decisión | Motivo | Consecuencia |
 | --- | --- | --- |
 | Repositorio independiente, no un fork | El gateway no modifica TShock; el fork solo se usa para PRs upstream | Ciclo de release propio y CI ligero |
-| Gateway externo, no plugin en proceso | Aísla fallos, evita cargar ASP.NET dentro de TShock y desacopla el SDK MCP | Phase 0 no necesita TShock instalado para compilar |
-| Licencia GPL-3.0-or-later | El futuro plugin enlaza `TShockAPI`, que es GPL | Un solo repo y una sola licencia |
+| Gateway externo, no plugin en proceso | Aísla fallos, evita cargar ASP.NET dentro de TShock y desacopla el SDK MCP | La Fase 0 no necesita TShock instalado para compilar |
+| Licencia GPL-3.0-or-later | El plugin de Fase 1 enlaza `TShockAPI`, que es GPL | Un solo repo y una sola licencia |
 | stdio primero | Es el camino más corto a un cliente real y no requiere autenticación de red | HTTP/OAuth queda para Fase 2 |
 | Escritura cerrada por defecto | Un modelo confundido no debe poder mutar el servidor sin una decisión humana | `TSHOCK_MCP_ALLOW_WRITE=true` explícito |
 | Sin `rawcmd` en Fase 0 | Un shell disfrazado anula el modelo de permisos | La ejecución de comandos llega con allowlist en Fase 1 |
@@ -112,12 +132,18 @@ REST y las herramientas de puente se marcan como no disponibles.
 | `TShock.AgentBridge/AgentBridgePlugin.cs` | `TerrariaPlugin`: arranque, parada y recarga |
 | `BridgeServer.cs` | HTTP loopback con token propio y endpoints versionados |
 | `MainThreadDispatcher.cs` | Cola `Channel<WorkItem>` drenada en `ServerApi.Hooks.GameUpdate` |
+| `RegionService.cs` | Regiones sobre el dispatcher |
 | `EventBuffer.cs` | Ring buffer de eventos con cursor monótono |
+| `EventService.cs` | Suscripción a los hooks de TShock y publicación de eventos |
 | `CommandCatalog.cs` | Lectura de `Commands.ChatCommands` y allowlist |
 | `BridgeClient.cs` (gateway) | Cliente HTTP del bridge, con detección y timeout |
 | `Tools/BridgeTools.cs` (gateway) | Tools de regiones, eventos y comandos |
 
-### API del bridge (propuesta)
+### API del bridge
+
+Implementados hoy: `GET /v1/health`, `GET /v1/world`, las cuatro rutas de regiones y
+`GET /v1/events`. El resto de la tabla es futuro. El contrato detallado, incluido el cursor, está en
+[`bridge.md`](bridge.md).
 
 | Método | Ruta | Uso |
 | --- | --- | --- |
@@ -183,13 +209,28 @@ public sealed class MainThreadDispatcher
 
 ### Eventos y cursor
 
-- Ring buffer en memoria de 10 000 eventos.
-- Cursor `long` monótono; el cliente guarda el último valor y pide `events_since(cursor)`.
+Implementado en el plugin y verificado contra el servidor real para eventos de región, de entrada y
+de comando. El gateway todavía no lo expone como herramienta MCP; la tool se llamará `events_since`
+y consumirá `GET /v1/events`.
+
+- Ring buffer en memoria de 10 000 eventos; el cursor `long` empieza en `1` y es exclusivo.
+- `GET /v1/events?cursor=&limit=`: `limit` entre 1 y 500, 100 por defecto. Omitir `cursor` devuelve
+  todo el backlog retenido, lo que permite arrancar un cliente nuevo aunque el ring haya dado la
+  vuelta.
+- La respuesta incluye `events`, `cursor` (último de la página), `head`, `oldest`, `hasMore` y
+  `session`.
+- Si el cursor es anterior a lo retenido o posterior a `head`, se devuelve `410 cursor_expired` con
+  `reason` (`evicted` o `unknown`), `oldest`, `head` y `resumeCursor = oldest - 1`.
+- Un cursor de una sesión anterior (reinicio del contenedor) cae en `unknown`; nunca se interpreta
+  como «no hay eventos». `session` cambia en cada arranque.
 - Tipos iniciales: `player.join`, `player.leave`, `chat`, `command`, `player.death`, `boss.kill`,
   `region.created`, `region.deleted`.
 - Todo contenido generado por jugadores se marca con `"untrusted": true`.
-- Si el cursor es más antiguo que el buffer, se devuelve `cursor_expired` con el cursor mínimo
-  disponible. No hay notificaciones push en Fase 1.
+- `command` guarda solo el nombre del comando: los argumentos se descartan a propósito porque
+  `/login` y `/register` llevan contraseñas.
+- No hay notificaciones push en Fase 1; el cliente guarda el cursor y consulta.
+
+El contrato completo, con ejemplos y límites de longitud, está en [`bridge.md`](bridge.md).
 
 ### Descubrimiento de comandos
 
@@ -226,7 +267,12 @@ Primer corte ya construido y probado contra el servidor real:
 | Plugin | `src/TShock.AgentBridge/AgentBridgePlugin.cs` | `[ApiVersion(2, 1)]`, `Order = 10`, arranque defensivo, token desde archivo o variable |
 | Servidor HTTP | `src/TShock.AgentBridge/BridgeServer.cs` | `HttpListener` en `0.0.0.0:7879`, bearer con comparación en tiempo constante, `401`/`404`/`500` sin filtrar trazas |
 | Dispatcher | `src/TShock.AgentBridge/MainThreadDispatcher.cs` | Cola `BlockingCollection`, timeout de 5 s, pump por `GameUpdate` y por temporizador cuando el servidor está en vacío |
-| Endpoints | — | `GET /v1/health`, `GET /v1/world`, y regiones: `GET /v1/regions`, `GET /v1/regions/{name}`, `POST /v1/regions`, `DELETE /v1/regions/{name}` |
+| Regiones | `src/TShock.AgentBridge/RegionService.cs` | Listar, leer, crear y eliminar sobre el hilo del juego |
+| Eventos | `src/TShock.AgentBridge/EventBuffer.cs` y `EventService.cs` | Ring buffer de 10 000 eventos, cursor monótono, suscripción a hooks de jugador, chat, comandos, muerte, jefes y regiones |
+| Endpoints | — | `GET /v1/health`, `GET /v1/world`, `GET /v1/events`, y regiones: `GET /v1/regions`, `GET /v1/regions/{name}`, `POST /v1/regions`, `DELETE /v1/regions/{name}` |
+
+Todo lo anterior es **capa plugin**. Ninguna de estas piezas es una tool MCP: el agente no puede
+invocarlas hasta que existan `BridgeClient` y `BridgeTools`.
 
 Despliegue usado en la prueba:
 
@@ -269,21 +315,28 @@ log. La comprobación de que el pump de respaldo queda inactivo es el propio con
 - [x] Implementar `MainThreadDispatcher` y probarlo con un work item que lea `Main.worldName`.
 - [x] Implementar `BridgeServer` con `/v1/health` y autenticación bearer.
 - [x] Añadir regiones (listar, leer, crear, eliminar).
-- [ ] Añadir `EventBuffer` y `events_since` con cursor.
+- [x] Añadir `EventBuffer`, `EventService` y `GET /v1/events` con cursor.
+- [x] Añadir la suite xUnit del ring buffer (23 pruebas, `tests/TShock.AgentBridge.Tests`).
+- [ ] **Siguiente:** añadir `BridgeClient` y `BridgeTools` al gateway; empezar por `events_since`.
+- [ ] Añadir la prueba MCP por stdio del puente (`events_since` primero) con un puente falso.
+- [ ] Añadir las tools de región al gateway, con escritura condicionada y confirmación al borrar.
 - [ ] Añadir `CommandCatalog` y `/v1/commands`.
-- [ ] Añadir `BridgeClient` y `BridgeTools` al gateway, con degradación a REST.
-- [ ] Extender la suite xUnit y la prueba e2e con un bridge falso.
-- [ ] Probar en un servidor TShock real: recarga, reinicio, desconexión del bridge y concurrencia.
+- [ ] Probar en un servidor TShock real la recarga, la desconexión del bridge y la concurrencia de
+      eventos con jugadores conectados.
+- [ ] Verificar por MCP, no por `curl`, los eventos de chat, muerte, jefe y salida.
 
 ### Criterios de aceptación
 
-- La suite de Fase 0 sigue en verde sin cambios de contrato.
-- El plugin carga en TShock 6.2.1 y se descarga sin dejar hilos ni puertos abiertos.
-- Crear y eliminar una región desde MCP se refleja en el servidor.
-- `events_since` devuelve eventos ordenados y estables entre reconexiones.
-- Un bridge caído no impide usar las tools REST.
-- Ninguna mutación se ejecuta fuera del hilo principal.
-- El token del bridge no aparece en logs ni en respuestas.
+| Criterio | Estado |
+| --- | --- |
+| La suite de Fase 0 sigue en verde sin cambios de contrato. | Hecho: 109 pruebas y 17 checks e2e. |
+| El plugin carga en TShock 6.2.1 y se descarga sin dejar hilos ni puertos abiertos. | Hecho para la carga; la descarga en caliente no existe. |
+| Crear y eliminar una región desde MCP se refleja en el servidor. | Pendiente: hoy solo existe la ruta HTTP del plugin. |
+| `events_since` devuelve eventos ordenados y estables entre reconexiones. | Pendiente: la ruta HTTP funciona; la tool MCP no existe. |
+| Un bridge caído no impide usar las tools REST. | Pendiente: no hay `BridgeClient` que degrade. |
+| Ninguna mutación se ejecuta fuera del hilo principal. | Hecho en las rutas de región del plugin. |
+| El token del bridge no aparece en logs ni en respuestas. | Verificado en el plugin; pendiente en el gateway. |
+| Toda tool del puente tiene prueba MCP por stdio. | Pendiente; es la definición de terminado de [`testing.md`](testing.md). |
 
 ### Riesgos
 
@@ -293,7 +346,7 @@ log. La comprobación de que el pump de respaldo queda inactivo es el propio con
 | Cambios de API entre versiones de TShock | Fijar 6.2.1, compilar contra NuGet y probar en un servidor real |
 | Volumen de eventos | Ring buffer acotado, límite por llamada y `cursor_expired` |
 | Escalada por comandos | Allowlist vacía, permisos del actor y confirmación |
-| Doble fuente de verdad (REST y bridge) | El bridge manda cuando está disponible; el gateway documenta la degradación |
+| Doble fuente de verdad (REST y bridge) | Cuando exista `BridgeClient`, el bridge manda si está disponible; el gateway documenta la degradación |
 
 ---
 
@@ -369,7 +422,7 @@ Estrategia: un fork de TShock solo para ramas de PR (`feat/rest-v4-commands`,
 | --- | --- | --- |
 | Transporte del bridge | HTTP loopback, Unix socket, named pipe | HTTP loopback con bearer; simple y multiplataforma |
 | Secreto del bridge | Token propio o reutilizar el token REST | Token propio, con permisos separados |
-| Retención de eventos | Memoria, JSONL, ambos | Ring buffer en memoria + JSONL opcional |
+| Retención de eventos | Memoria, JSONL, ambos | Ring buffer en memoria implementado; JSONL opcional queda para después |
 | Ejecución de comandos | Todo, allowlist, nada | Allowlist vacía por defecto |
 | Nombre y publicación | `tshock-mcp` comunitario u organización oficial | Publicar como comunitario y consultar antes de usar el nombre oficial |
 | Migración a .NET 9 | Gateway net8 + plugin net9, o todo net9 | Gateway net8 hasta que el plugin estabilice |
@@ -381,12 +434,14 @@ Estrategia: un fork de TShock solo para ramas de PR (`feat/rest-v4-commands`,
 
 ### Orden de lectura
 
-1. `AGENTS.md` — invariantes y reglas del repositorio.
-2. `README.md` — uso y estado.
-3. `docs/architecture.md` — diseño de la Fase 0.
-4. `docs/security.md` — modelo de amenazas.
-5. `docs/local-testing.md` — guía para levantar TShock y probar en OpenCode.
-6. Este documento — plan y contexto.
+1. `AGENTS.md` — invariantes, definición de terminado y reglas para agentes.
+2. `README.md` — uso y estado de cara al usuario.
+3. `docs/roadmap.md` — este documento: estado por capa, decisiones y plan real.
+4. `docs/testing.md` — capas de prueba y qué se considera aceptación.
+5. `docs/architecture.md` — diseño de la Fase 0 y capas actuales.
+6. `docs/bridge.md` — contrato HTTP del plugin de Fase 1.
+7. `docs/security.md` — modelo de amenazas.
+8. `docs/local-testing.md` — guía para levantar TShock y probar.
 
 ### Comandos
 
@@ -413,10 +468,19 @@ src/TShock.MCP.Server/
   TShock/ToolResults.cs          Sobre estable
   Tools/ReadTools.cs             12 tools de lectura
   Tools/WriteTools.cs            6 tools de escritura
+src/TShock.AgentBridge/          Plugin de Fase 1 (net9.0)
+  AgentBridgePlugin.cs           Arranque, hooks de ciclo de vida
+  BridgeServer.cs                HTTP loopback, auth y rutas
+  MainThreadDispatcher.cs        Cola de trabajo del hilo del juego
+  RegionService.cs               Regiones
+  EventBuffer.cs                 Ring buffer y contrato de cursor
+  EventService.cs                Suscripción a hooks y publicación
 tests/
-  TShock.MCP.Server.Tests/       Suite xUnit
+  TShock.MCP.Server.Tests/       Suite xUnit del gateway (109)
+  TShock.AgentBridge.Tests/      Suite xUnit del puente (23)
   e2e/mcp_stdio_smoke.py         Prueba de extremo a extremo
-docs/                            Arquitectura, tools, seguridad, roadmap
+docs/                            Arquitectura, bridge, tools, testing, seguridad, roadmap
+.github/pull_request_template.md Checklist de la definición de terminado
 docker/                          Imagen y ejemplo para Claude Desktop
 ```
 
@@ -431,11 +495,11 @@ docker/                          Imagen y ejemplo para Claude Desktop
 
 ### Primeras tareas sugeridas
 
-1. Instalar .NET 9 y crear el proyecto del plugin.
-2. Implementar `/v1/health` y el dispatcher; validar que no hay deadlocks.
-3. Añadir regiones y una prueba de integración con bridge falso.
-4. Añadir eventos con cursor y `events_since`.
-5. Añadir descubrimiento de comandos y allowlist.
+1. Añadir `BridgeClient` y la tool `events_since` al gateway: es el corte vertical que falta.
+2. Añadir la prueba MCP por stdio de `events_since` con un puente falso.
+3. Añadir las tools de región, con escritura condicionada y confirmación al borrar.
+4. Verificar por MCP los eventos de chat, muerte, jefe y salida con un jugador conectado.
+5. Añadir `CommandCatalog` y `GET /v1/commands`.
 
 ---
 
@@ -498,6 +562,60 @@ docker/                          Imagen y ejemplo para Claude Desktop
   completo porque trabaja sobre la lista en memoria.
 - `RegionManager.DeleteRegion(name)` devuelve `true` aunque no exista la fila; hay que comprobar
   `GetRegionByName` antes para poder responder `404`.
+- `RegionManager.DeleteRegion` dispara `RegionHooks.OnRegionDeleted` **aunque no haya fila**, con
+  `Region` nulo. El consumidor debe comprobar `args.Region is null` antes de publicar el evento.
+- `PlayerHooks.PlayerPostLogin` no es un hook general de entrada: solo se dispara en los flujos de
+  cuenta autenticada. Para `player.join` hay que usar `ServerApi.Hooks.NetGreetPlayer`, que corre
+  cuando el nombre ya es definitivo.
+- TShock registra su manejador de `ServerLeave` con `Order = 0` y vacía `Players[who]` antes que los
+  plugins con `Order` mayor. Un manejador tardío no puede leer el nombre desde `TShock.Players`; el
+  puente guarda un roster alimentado por `NetGreetPlayer`.
+- `PlayerCommandEventArgs.Text` y `CommandText` incluyen los argumentos. No registrarlos: `/login` y
+  `/register` llevan contraseñas y `/msg` texto privado. Guardar solo `CommandName`.
+- Los hooks `PlayerHooks` y `RegionHooks` son eventos estáticos con delegados anidados; se pueden
+  suscribir desde un plugin externo, pero hay que dar de baja cada delegado en `Dispose` para no
+  dejar referencias al plugin descargado.
+- El `HttpListener` responde `411` a un `POST` sin `Content-Length` antes de llegar al handler; para
+  probar el `405` hay que enviar un cuerpo vacío (`--data ''`).
+- Un cursor de una sesión anterior no es «sin eventos»: tras reiniciar el plugin los cursores vuelven
+  a empezar en `1`. El endpoint responde `410 cursor_expired` con `reason = "unknown"` para que el
+  cliente reanude desde `resumeCursor`.
+
+### Continuación: regiones y eventos (1 de noviembre de 2026)
+
+Lo construido en esta sesión:
+
+- `EventBuffer`: ring buffer de 10 000 eventos, cursor `long` exclusivo, expiración por descarte y
+  detección de cursores de una sesión anterior.
+- `EventService`: suscripción a `NetGreetPlayer`, `ServerLeave`, `PlayerChat`, `PlayerCommand`,
+  `GetDataHandlers.KillMe`, `NpcKilled`, `RegionCreated` y `RegionDeleted`; roster de nombres para
+  sobrevivir al orden de los manejadores de `ServerLeave`.
+- `GET /v1/events?cursor=&limit=` con `200`, `400` (`invalid_cursor`, `invalid_limit`), `401` y
+  `410 cursor_expired`.
+- Suite `tests/TShock.AgentBridge.Tests` con 23 pruebas del buffer y del truncado; el total sube a
+  132.
+- `docs/bridge.md` con el contrato completo.
+
+Verificado contra el servidor real (TShock 6.2.1.0):
+
+- `/v1/health` con el bloque `events` (sesión, `head`, `oldest`, `retained`).
+- Crear y eliminar una región genera `region.created` y `region.deleted` con cursores 1 y 2,
+  `untrusted: true` y el nombre esperado.
+- Paginación con `limit=1`, `hasMore` y cursor exclusivo.
+- `400` para cursor y límite inválidos, `401` sin bearer, `405` con métodos distintos de `GET`.
+- `410` con `reason = "unknown"` para un cursor posterior a `head`.
+- Reinicio del contenedor: `session` cambia, `head` vuelve a 0 y un cursor viejo cae en `410`.
+- El token del puente no aparece en los logs del contenedor ni en `docker inspect`.
+
+Durante la sesión se conectó un jugador real, lo que permitió verificar además:
+
+- `player.join` se emitió al saludar, con el nombre definitivo.
+- `command` registró `/setup` **solo con el nombre del comando**; el código de configuración, que es
+  un secreto, no apareció en el evento. Es la comprobación real de que los argumentos se descartan.
+
+Pendiente de verificación con un cliente: `player.leave`, `chat`, `player.death` y `boss.kill`. Los
+hooks están registrados y compilan contra TShock 6.2.1.0; faltan las acciones en vivo (hablar, morir,
+matar un jefe y desconectarse).
 
 ### No objetivos
 

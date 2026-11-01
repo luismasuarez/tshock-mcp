@@ -221,3 +221,33 @@ la URL base. Un `error` con estado 200 produce el mismo código con `httpStatus:
   instrucciones. Consulte [security.md](security.md#inyección-de-prompts).
 - El tamaño de las respuestas está acotado; una respuesta excesiva se rechaza con
   `response_too_large` en lugar de consumir memoria sin límite.
+
+## Catálogo actual y herramientas pendientes
+
+Las **18 herramientas** de las secciones anteriores son las únicas que el agente puede invocar hoy.
+Todas usan la API REST de TShock. El puente de Fase 1 existe, pero el gateway todavía no lo consume:
+sus rutas HTTP no son herramientas MCP.
+
+Pendientes de implementar:
+
+| Tool prevista | Origen | Tipo | Estado |
+| --- | --- | --- | --- |
+| `events_since` | `GET /v1/events` del puente | Lectura | No existe |
+| `regions_list` | `GET /v1/regions` del puente | Lectura | No existe |
+| `region_info` | `GET /v1/regions/{name}` del puente | Lectura | No existe |
+| `region_create` | `POST /v1/regions` del puente | Escritura | No existe |
+| `region_delete` | `DELETE /v1/regions/{name}` del puente | Escritura destructiva | No existe |
+| `commands_list` | `GET /v1/commands` del puente | Lectura | No existe |
+| `config_get` | `GET /v1/config` del puente | Lectura | No existe |
+| `run_command` | `POST /v1/commands/execute` | Escritura con allowlist | No existe |
+
+Cuando se implementen:
+
+- Usarán el sobre estable `ok` / `error` y el mismo filtro de argumentos.
+- Las de escritura comprobarán `TSHOCK_MCP_ALLOW_WRITE=true`; `region_delete` exigirá confirmación.
+- `events_since` devolverá `cursor`, `head`, `oldest`, `hasMore` y `session`, y traducirá
+  `cursor_expired` a un error con `resumeCursor`.
+- Cada una tendrá prueba MCP por stdio, no solo `curl` al puente. Consulte
+  [testing.md](testing.md).
+
+El contrato HTTP del plugin, incluido el cursor, está en [bridge.md](bridge.md).
