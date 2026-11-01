@@ -49,3 +49,7 @@ desktop.ini
 *.sqlite
 *.log
 audit*.jsonl
+
+# Local MCP wiring (absolute host paths, no secrets)
+opencode.json
+opencode.jsonc
