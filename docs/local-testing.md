@@ -6,7 +6,7 @@ Esta guía describe cómo levantar un servidor TShock desechable con Docker y co
 Decisiones tomadas para esta prueba:
 
 - **Docker** para TShock: no requiere instalar .NET 9 ni ensuciar el sistema.
-- **Registro del MCP solo en el proyecto** `/home/luisma/dev/hobbies/tshock-mcp`; no global.
+- **Registro del MCP solo en el proyecto** (la raíz del repositorio); no global.
 - **Solo lectura primero**; la escritura se habilita en una segunda pasada.
 
 Al terminar, el agente podrá consultar el estado del servidor, jugadores, mundo, cuentas, grupos y
@@ -139,7 +139,9 @@ El binding de arriba permite conectarse solo desde el host. Para jugar desde otr
 1. Publica el puerto del juego en la IP del host y **mantén la REST en loopback**:
 
    ```bash
-   -p 192.168.1.104:7777:7777 \
+   HOST_IP="192.168.1.50"   # IP de LAN del host
+
+   -p "$HOST_IP:7777:7777" \
    -p 127.0.0.1:7878:7878 \
    ```
 
@@ -152,6 +154,8 @@ El binding de arriba permite conectarse solo desde el host. Para jugar desde otr
    ```bash
    sudo ufw allow from 192.168.1.0/24 to any port 7777 proto tcp
    ```
+
+   Ajusta la subred a la tuya.
 
 3. Define una contraseña. El archivo `config.json` pertenece a root, así que edítalo con un
    contenedor efímero:
@@ -260,12 +264,12 @@ Reglas del envoltorio:
 Ejecuta desde la raíz del repositorio, **sin** `--global`:
 
 ```bash
-cd /home/luisma/dev/hobbies/tshock-mcp
+cd "$(git rev-parse --show-toplevel)"
 
 opencode mcp add tshock \
   --env TSHOCK_REST_URL=http://127.0.0.1:7878 \
   --env TSHOCK_MCP_ALLOW_WRITE=false \
-  -- /home/luisma/dev/hobbies/tshock-mcp/scripts/run-tshock-mcp.sh
+  -- "$PWD/scripts/run-tshock-mcp.sh"
 ```
 
 Comprueba qué archivo escribió:
@@ -290,7 +294,7 @@ Configuración manual equivalente, si prefieres editar el archivo:
       "tshock": {
         "type": "local",
         "command": [
-          "/home/luisma/dev/hobbies/tshock-mcp/scripts/run-tshock-mcp.sh"
+          "<ruta-del-repo>/scripts/run-tshock-mcp.sh"
         ],
         "environment": {
           "TSHOCK_REST_URL": "http://127.0.0.1:7878",
@@ -386,7 +390,7 @@ cliente de Terraria y pide `player_info`: la IP debe aparecer como `<redacted>`.
 
 Para comprobar el otro lado del invariante, lanza el envoltorio con `TSHOCK_MCP_SHOW_IPS=true` en
 un proceso aparte (no hace falta tocar la configuración del proyecto) y repite `player_info`: debe
-devolver la IP real, por ejemplo `192.168.1.103`.
+devolver la IP real, por ejemplo `192.168.1.50`.
 
 Notas observadas en TShock 6.2.1.0 con cliente 1.4.5.8:
 

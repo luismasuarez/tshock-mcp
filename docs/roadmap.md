@@ -4,10 +4,11 @@ Este documento es el punto de entrada para retomar el proyecto en una sesión nu
 ya existe, las decisiones que no conviene volver a discutir, el plan de las fases siguientes y los
 detalles de entorno que no son evidentes desde el código.
 
-- **Repositorio:** `/home/luisma/dev/hobbies/tshock-mcp`
-- **Estado:** Fase 0 completada y verificada.
-- **Commit de referencia:** `20d78c2` (`feat: phase 0 MCP gateway for TShock REST API`).
-- **Fecha de cierre de la sesión:** 31 de octubre de 2026.
+- **Repositorio:** https://github.com/luismasuarez/tshock-mcp
+- **Estado:** Fase 0 completada y verificada contra un servidor TShock real (TShock 6.2.1.0,
+  Terraria 1.4.5.8, cliente en la LAN).
+- **Commit de referencia:** `v0.1.0`.
+- **Fecha de cierre de la sesión:** 1 de noviembre de 2026.
 
 ---
 
@@ -24,6 +25,7 @@ detalles de entorno que no son evidentes desde el código.
 | Seguridad | Escritura desactivada por defecto, token nunca registrado, IP y credenciales redactadas |
 | Contrato de salida | Sobre JSON estable `ok` / `error` |
 | Pruebas | 109 pruebas xUnit y 17 comprobaciones e2e por stdio |
+| Verificación real | Lectura, escritura, errores y redacción probados con un cliente de Terraria en la LAN |
 | Distribución | Dockerfile multi-stage y workflow de CI |
 
 ### Lo que no existe todavía
@@ -37,7 +39,7 @@ detalles de entorno que no son evidentes desde el código.
 ### Verificación de referencia
 
 ```bash
-cd /home/luisma/dev/hobbies/tshock-mcp
+cd tshock-mcp
 dotnet build -c Release
 dotnet test -c Release --no-build
 python3 tests/e2e/mcp_stdio_smoke.py
@@ -344,7 +346,7 @@ Estrategia: un fork de TShock solo para ramas de PR (`feat/rest-v4-commands`,
 ### Comandos
 
 ```bash
-cd /home/luisma/dev/hobbies/tshock-mcp
+cd tshock-mcp
 git log --oneline -3
 dotnet build -c Release
 dotnet test -c Release --no-build
@@ -428,6 +430,18 @@ docker/                          Imagen y ejemplo para Claude Desktop
 - El spec MCP actual no tiene sesiones; no diseñar estado por conexión.
 - `PlayerReadV4` devuelve `ip` sin comprobar permisos; la redacción del gateway es obligatoria.
 - Los bans usan `identifier`, no `ip`, para el objetivo de la prohibición.
+- `/v2/server/status` es pública en TShock 6.2.1.0: responde `200` sin token. El rechazo `403` se
+  prueba en rutas protegidas como `/world/read`.
+- Pasar el token con `-rest-token` rompe `reload_config`: el reload vuelve a parsear la línea de
+  comandos y `RESTStartupTokens.Add` explota por clave duplicada, devolviendo `500` con el token en
+  claro dentro del mensaje. Solución: `ApplicationRestTokens` en `config.json` y arrancar sin ese
+  flag; así el token tampoco aparece en `docker inspect`.
+- `mute_player` fija el estado en vez de alternarlo, y el gateway no expone `unmute` en Fase 0.
+- `kick_player` puede devolver `200` y aun así dejar al cliente congelado y la sesión activa como
+  fantasma; reiniciar el contenedor libera el cupo.
+- El código de `/setup` se restablece al reiniciar el contenedor.
+- TShock escribe la IP real del jugador en los logs del contenedor; la redacción del gateway no
+  cubre esa salida.
 
 ### No objetivos
 

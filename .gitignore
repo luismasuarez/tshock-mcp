@@ -53,3 +53,6 @@ audit*.jsonl
 # Local MCP wiring (absolute host paths, no secrets)
 opencode.json
 opencode.jsonc
+
+# Agent session transcripts
+session-*.md

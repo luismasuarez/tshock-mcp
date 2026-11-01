@@ -163,6 +163,11 @@ secretos que las inyecte.
 - Active `TSHOCK_MCP_SHOW_IPS=true` solo si el caso de uso lo exige (por ejemplo, diagnóstico de
   conexiones) y con pleno conocimiento de que esa información quedará en el historial del modelo.
 
+> La redacción del gateway cubre lo que devuelven las herramientas. **No cubre los logs de TShock**:
+> al entrar un jugador, el servidor escribe `Luisma has joined. IP: 192.0.2.10` en su salida. Ese
+> archivo crece fuera del control del gateway; trátelo como dato sensible, no lo publique y límite
+> quién puede leer `docker logs` o `$DATA/tshock/logs`.
+
 ## Registro de auditoría
 
 Con `TSHOCK_MCP_AUDIT_LOG` definido, el servidor agrega una línea JSONL por llamada REST con:

@@ -13,9 +13,13 @@ herramientas de solo lectura y de escritura acotadas, con escritura deshabilitad
 
 | Fase | Alcance | Estado |
 | --- | --- | --- |
-| Fase 0 | Transporte stdio, 18 herramientas, configuración por variables de entorno, sin cambios en TShock | **Implementada** |
+| Fase 0 | Transporte stdio, 18 herramientas, configuración por variables de entorno, sin cambios en TShock | **Implementada y verificada** |
 | Fase 1 | Puente (*bridge*) con TShock: regiones, eventos y descubrimiento de comandos | Futura, no implementada |
 | Fase 2 | Transporte HTTP y OAuth 2.1 para despliegues remotos | Futura, no implementada |
+
+La Fase 0 está verificada contra un servidor real (TShock 6.2.1.0, Terraria 1.4.5.8) con un cliente
+en la LAN: lectura, las 6 herramientas de escritura, mapeo de errores y redacción de IP en ambos
+sentidos. El procedimiento reproducible está en [`docs/local-testing.md`](docs/local-testing.md).
 
 Todo lo que no sea Fase 0 es trabajo planificado. En particular, **no** existen hoy soporte HTTP,
 OAuth, puente de plugins, eventos, regiones ni ejecución de comandos arbitrarios.
