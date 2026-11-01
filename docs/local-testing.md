@@ -378,9 +378,15 @@ opencode mcp list
 | `save_world` | «Guarda el mundo» | Archivo `.wld` actualizado y `.bak` creado |
 | `reload_config` | «Recarga la configuración» | Respuesta de éxito (requiere el token en `config.json`) |
 | `kick_player` | Con un jugador conectado: «Expulsa a X» | El jugador pierde la conexión |
+| `kill_player` | «Mata el personaje de X» | El jugador muere, reaparece y sigue conectado |
+| `mute_player` | «Silencia a X» | `player_info` muestra `muted: true` |
 
 `kill_player` y `mute_player` requieren un jugador conectado. Para probar la redacción, conecta un
 cliente de Terraria y pide `player_info`: la IP debe aparecer como `<redacted>`.
+
+Para comprobar el otro lado del invariante, lanza el envoltorio con `TSHOCK_MCP_SHOW_IPS=true` en
+un proceso aparte (no hace falta tocar la configuración del proyecto) y repite `player_info`: debe
+devolver la IP real, por ejemplo `192.168.1.103`.
 
 Notas observadas en TShock 6.2.1.0 con cliente 1.4.5.8:
 
@@ -389,6 +395,12 @@ Notas observadas en TShock 6.2.1.0 con cliente 1.4.5.8:
 - `kick_player` devolvió `200` («Player X was kicked»), pero el cliente quedó congelado en lugar de
   volver al menú y TShock mantuvo la sesión como activa. Si ves un jugador fantasma, reinicia el
   contenedor para liberar el cupo.
+- `kill_player` devolvió `200` («Player X was killed»); el jugador sigue conectado y reaparece, y
+  TShock no registra el evento en `docker logs`.
+- `mute_player` devolvió `200` las dos veces y el jugador siguió silenciado: la ruta **fija** el
+  estado, no alterna. Verifícalo con `player_info` (`muted: true`). Para revertirlo usa
+  `/v2/players/unmute?token=...&player=...` directamente contra TShock; el gateway no expone esa
+  ruta en la Fase 0.
 
 Al terminar, vuelve a `TSHOCK_MCP_ALLOW_WRITE=false`. No hace falta reiniciar: OpenCode recarga la
 configuración del proyecto y el gateway vuelve a responder `write_disabled`, sin tráfico al

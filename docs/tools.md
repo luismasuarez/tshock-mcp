@@ -37,7 +37,7 @@ Convenciones de la tabla:
 | `broadcast` | Envía un mensaje a todos los jugadores conectados. | `GET /v2/server/broadcast` | `tshock.rest.broadcast` | `message` | Visible para todos los jugadores de inmediato. |
 | `kick_player` | Expulsa a un jugador del servidor. | `GET /v2/players/kick` | `tshock.rest.kick` | `player`, `reason` (opcional) | El jugador pierde la conexión; puede reconectarse si no está prohibido. |
 | `kill_player` | Mata al personaje de un jugador sin expulsarlo. | `GET /v2/players/kill` | `tshock.rest.kill` | `player`, `from` (opcional) | El jugador muere y reaparece según las reglas del servidor; puede perder objetos si el modo lo permite. |
-| `mute_player` | Silencia el chat de un jugador. | `GET /v2/players/mute` | `tshock.rest.mute` | `player` | Los mensajes del jugador dejan de difundirse. |
+| `mute_player` | Silencia el chat de un jugador. | `GET /v2/players/mute` | `tshock.rest.mute` | `player` | Los mensajes del jugador dejan de difundirse. La ruta fija el estado y no lo alterna; no hay herramienta para revertirlo (`/v2/players/unmute` queda fuera de la Fase 0). |
 | `save_world` | Guarda el mundo actual en disco. | `GET /v2/world/save` | `tshock.rest.cfg` | — | Persiste el estado del mundo; puede producir una pausa breve. |
 | `reload_config` | Recarga la configuración de TShock. | `GET /v3/server/reload` | `tshock.rest.cfg` | — | Aplica cambios de configuración sin reiniciar; puede alterar el comportamiento del servidor en caliente. |
 
