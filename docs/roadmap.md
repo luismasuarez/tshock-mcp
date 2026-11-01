@@ -250,6 +250,17 @@ puente es distinto del token REST y se monta como archivo para que no aparezca e
 La carga se confirma con `docker logs tshock-test | grep "TShock.AgentBridge"`; no hay recarga en
 caliente: un cambio de plugin requiere reiniciar el contenedor.
 
+Mediciones con un jugador conectado, frente al servidor vacío:
+
+| Escenario | Ticks | Latencia de `/v1/world` |
+| --- | --- | --- |
+| Servidor vacío | ~1/s (pump de respaldo) | ~0,5 s |
+| Jugador conectado | ~60/s (hook `GameUpdate`) | ~0,01 s |
+
+Con 20 peticiones concurrentes a `/v1/world` respondieron `200` las 20, sin errores nuevos en el
+log. La comprobación de que el pump de respaldo queda inactivo es el propio contador: 304 ticks en
+5 segundos no deja sitio a un temporizador de 1 Hz.
+
 ### Plan de trabajo
 
 - [x] Instalar .NET 9 SDK en la máquina (TShock 6.2.1 apunta a `net9.0`).
