@@ -217,13 +217,46 @@ comandos con esquema curado a mano tienen prioridad. La allowlist por defecto es
 - Confirmación humana para `region_delete` y cualquier comando destructivo.
 - Límite de eventos por llamada y de tamaño de respuesta.
 
+### Estado de la implementación
+
+Primer corte ya construido y probado contra el servidor real:
+
+| Pieza | Archivo | Estado |
+| --- | --- | --- |
+| Plugin | `src/TShock.AgentBridge/AgentBridgePlugin.cs` | `[ApiVersion(2, 1)]`, `Order = 10`, arranque defensivo, token desde archivo o variable |
+| Servidor HTTP | `src/TShock.AgentBridge/BridgeServer.cs` | `HttpListener` en `0.0.0.0:7879`, bearer con comparación en tiempo constante, `401`/`404`/`500` sin filtrar trazas |
+| Dispatcher | `src/TShock.AgentBridge/MainThreadDispatcher.cs` | Cola `BlockingCollection`, timeout de 5 s, pump por `GameUpdate` y por temporizador cuando el servidor está en vacío |
+| Endpoints | — | `GET /v1/health` (estado, mundo, versión, ticks) y `GET /v1/world` (lectura a través del dispatcher) |
+
+Despliegue usado en la prueba:
+
+```bash
+cp src/TShock.AgentBridge/bin/Release/net9.0/TShock.AgentBridge.dll \
+   "$HOME/.local/share/tshock-mcp/plugins/"
+
+docker run -d --name tshock-test \
+  -p <host-ip>:7777:7777 \
+  -p 127.0.0.1:7878:7878 \
+  -p 127.0.0.1:7879:7879 \
+  -v "$DATA/tshock:/tshock" -v "$DATA/worlds:/worlds" -v "$DATA/plugins:/plugins" \
+  -v "$HOME/.config/tshock-mcp/bridge-token:/run/secrets/bridge-token:ro" \
+  -e TSHOCK_BRIDGE_TOKEN_FILE=/run/secrets/bridge-token \
+  ghcr.io/pryaxis/tshock:latest \
+  -world /worlds/Test.wld -port 7777 -maxplayers 8
+```
+
+La imagen ya pasa `-additionalplugins /plugins`, así que basta con copiar el DLL. El token del
+puente es distinto del token REST y se monta como archivo para que no aparezca en `docker inspect`.
+La carga se confirma con `docker logs tshock-test | grep "TShock.AgentBridge"`; no hay recarga en
+caliente: un cambio de plugin requiere reiniciar el contenedor.
+
 ### Plan de trabajo
 
-- [ ] Instalar .NET 9 SDK en la máquina (TShock 6.2.1 apunta a `net9.0`).
-- [ ] Crear `src/TShock.AgentBridge/TShock.AgentBridge.csproj` con referencias a TShock 6.2.1 y TSAPI.
-- [ ] Implementar `AgentBridgePlugin` con arranque y parada idempotentes.
-- [ ] Implementar `MainThreadDispatcher` y probarlo con un work item que lea `Main.worldName`.
-- [ ] Implementar `BridgeServer` con `/v1/health` y autenticación bearer.
+- [x] Instalar .NET 9 SDK en la máquina (TShock 6.2.1 apunta a `net9.0`).
+- [x] Crear `src/TShock.AgentBridge/TShock.AgentBridge.csproj` con referencias a TShock 6.2.1 y TSAPI.
+- [x] Implementar `AgentBridgePlugin` con arranque y parada idempotentes.
+- [x] Implementar `MainThreadDispatcher` y probarlo con un work item que lea `Main.worldName`.
+- [x] Implementar `BridgeServer` con `/v1/health` y autenticación bearer.
 - [ ] Añadir regiones (listar, leer, crear, eliminar).
 - [ ] Añadir `EventBuffer` y `events_since` con cursor.
 - [ ] Añadir `CommandCatalog` y `/v1/commands`.
@@ -378,8 +411,8 @@ docker/                          Imagen y ejemplo para Claude Desktop
 
 ### Entorno
 
-- **.NET SDK instalado:** 8.0.426. Solo runtime 8.0.32.
-- **.NET 9:** necesario para compilar el plugin de Fase 1; instalarlo antes de empezar.
+- **.NET SDK instalado:** 8.0.426 y 9.0.320, ambos en `~/.dotnet`.
+- **.NET 9:** requerido por el plugin de Fase 1; el gateway sigue en `net8.0`.
 - **Docker:** 29.4.1 disponible.
 - **TShock de referencia:** 6.2.1, `net9.0`, REST por defecto en el puerto 7878.
 - **MCP C# SDK:** 2.3.0 (`ModelContextProtocol`), compatible con `net8.0`.
@@ -443,6 +476,11 @@ docker/                          Imagen y ejemplo para Claude Desktop
 - El código de `/setup` se restablece al reiniciar el contenedor.
 - TShock escribe la IP real del jugador en los logs del contenedor; la redacción del gateway no
   cubre esa salida.
+- Un servidor TShock **sin jugadores no ejecuta el tick del juego**: `Main.time` no avanza y
+  `ServerApi.Hooks.GameUpdate` no se dispara. Un `MainThreadDispatcher` que dependa solo de ese hook
+  se queda esperando y expira. El puente usa un pump de respaldo por temporizador que actúa solo
+  cuando el contador de ticks lleva más de un segundo estático, es decir, cuando no hay estado del
+  mundo mutando en paralelo.
 
 ### No objetivos
 

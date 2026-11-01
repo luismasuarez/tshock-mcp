@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <AssemblyName>TShock.AgentBridge</AssemblyName>
+    <RootNamespace>TShock.AgentBridge</RootNamespace>
+    <!-- The TSAPI loader reads the assembly bytes, so a deps.json or a copied closure
+         would never be resolved. Keep the output to a single plugin assembly. -->
+    <EnableDynamicLoading>false</EnableDynamicLoading>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <DebugType>portable</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Compile against the TShock 6.2.1 API; the assemblies ship with the server. -->
+    <PackageReference Include="TShock" Version="6.2.1" ExcludeAssets="runtime" />
+    <PackageReference Include="OTAPI.Upcoming" Version="3.3.14" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+</Project>
