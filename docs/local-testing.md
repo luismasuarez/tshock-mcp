@@ -94,13 +94,43 @@ detiene, revisa los logs antes de reintentar.
 > El token es visible en `docker inspect` porque viaja como argumento. Para una prueba local es
 > aceptable; en producción usa un token en `config.json` y un grupo con permisos mínimos.
 
-### Token en `config.json` (necesario para `reload_config`)
+### Token en `config.json` con grupo dedicado
 
 Con `-rest-token`, la herramienta `reload_config` falla siempre con `500`: al recargar, TShock
 vuelve a parsear la línea de comandos y ejecuta `RESTStartupTokens.Add(token, ...)` sobre una clave
-que ya existe (`TShock.cs`). Además, el mensaje de error de TShock incluye el token en claro.
+que ya existe (`TShock.cs`). Además, el mensaje de error de TShock incluye el token en claro, y el
+flag fija el grupo `superadmin` en duro, que es más privilegio del necesario.
 
-Después del primer arranque, mueve el token a la configuración y arranca sin los flags de REST:
+El primer arranque se hace con `-rest-token` para generar el mundo y `config.json`. Con ese token
+temporal se crea un grupo acotado:
+
+```bash
+TOKEN="$(cat "$HOME/.config/tshock-mcp/token")"
+
+curl -sS -G "http://127.0.0.1:7878/v2/groups/create" \
+  --data-urlencode "group=mcp-rest" \
+  --data-urlencode "parent=" \
+  --data-urlencode "permissions=tshock.rest.users.info,tshock.rest.users.view,tshock.rest.groups.view,tshock.rest.bans.view" \
+  --data-urlencode "chatcolor=255,255,255" \
+  --data-urlencode "token=$TOKEN"
+```
+
+Ese conjunto cubre las rutas de lectura que exigen permiso. `status`, `motd`, `rules`, `world/read` y
+`players/list` no piden ninguno. Si vas a probar escritura, añade los cinco permisos restantes con
+`/v2/groups/update`:
+
+```bash
+curl -sS -G "http://127.0.0.1:7878/v2/groups/update" \
+  --data-urlencode "group=mcp-rest" \
+  --data-urlencode "permissions=tshock.rest.users.info,tshock.rest.users.view,tshock.rest.groups.view,tshock.rest.bans.view,tshock.rest.broadcast,tshock.rest.kick,tshock.rest.kill,tshock.rest.mute,tshock.rest.cfg" \
+  --data-urlencode "chatcolor=255,255,255" \
+  --data-urlencode "token=$TOKEN"
+```
+
+No uses `parent=guest`: heredaría los permisos de juego y ampliaría el conjunto. No omitas
+`chatcolor` en `update`: el handler genera un valor con puntos que el modelo rechaza en silencio.
+
+Después, mueve el token a la configuración, ligado al grupo nuevo, y arranca sin los flags de REST:
 
 ```bash
 docker stop tshock-test && docker rm tshock-test
@@ -108,7 +138,7 @@ docker stop tshock-test && docker rm tshock-test
 docker run --rm -v "$DATA/tshock:/tshock" --entrypoint sh \
   ghcr.io/pryaxis/tshock:latest -c "
   sed -i 's/\"RestApiEnabled\": false,/\"RestApiEnabled\": true,/' /tshock/config.json
-  sed -i 's|\"ApplicationRestTokens\": {}|\"ApplicationRestTokens\": { \"$TOKEN\": { \"Username\": \"null\", \"UserGroupName\": \"superadmin\" } }|' /tshock/config.json
+  sed -i 's|\"ApplicationRestTokens\": {}|\"ApplicationRestTokens\": { \"$TOKEN\": { \"Username\": \"mcp-gateway\", \"UserGroupName\": \"mcp-rest\" } }|' /tshock/config.json
   "
 
 docker run -d --name tshock-test \
@@ -121,16 +151,20 @@ docker run -d --name tshock-test \
   -world /worlds/Test.wld -port 7777 -maxplayers 8
 ```
 
-La clave del diccionario es el token en claro (no un hash) y el valor usa el esquema
-`{"Username": "null", "UserGroupName": "superadmin"}`. Comprueba que la configuración sigue siendo
-JSON válido antes de arrancar y que una ruta protegida responde:
+La clave del diccionario es el token en claro (no un hash); `UserGroupName` debe coincidir
+exactamente con un grupo existente. Comprueba que la configuración sigue siendo JSON válido antes de
+arrancar, que la lectura responde y que la escritura queda denegada por TShock:
 
 ```bash
 python3 -c 'import json,os; json.load(open(os.path.expanduser("~/.local/share/tshock-mcp/tshock/config.json")))'
-curl -s -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:7878/world/read?token=$TOKEN"
+curl -s -o /dev/null -w 'read  %{http_code}\n' "http://127.0.0.1:7878/v2/users/list?token=$TOKEN"
+curl -s -o /dev/null -w 'write %{http_code}\n' "http://127.0.0.1:7878/v2/server/broadcast?token=$TOKEN&msg=test"
 ```
 
-Con este arranque el token no aparece en `docker inspect` y `reload_config` funciona.
+Con este arranque el token no aparece en `docker inspect`, `reload_config` funciona y la escritura
+tiene dos barreras: el flag del gateway y los permisos del grupo. Los cambios en
+`ApplicationRestTokens` requieren reiniciar; los cambios de permisos del grupo se aplican en la
+siguiente petición, sin reiniciar.
 
 ### Multijugador desde otra PC de la LAN
 

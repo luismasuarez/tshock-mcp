@@ -44,6 +44,12 @@ Convenciones de la tabla:
 No existen herramientas para prohibir jugadores, crear o borrar cuentas, modificar grupos, apagar el
 servidor ni ejecutar comandos. Esas operaciones quedan fuera de la Fase 0 a propósito.
 
+Para un token de solo lectura, el grupo dedicado necesita la unión de la columna «Permiso» de las
+rutas que exigen uno: `tshock.rest.users.info`, `tshock.rest.users.view`, `tshock.rest.groups.view` y
+`tshock.rest.bans.view`. `server_status`, `server_motd`, `server_rules`, `world_info` y
+`players_list` funcionan sin permisos. Habilitar escritura añade cinco permisos más; el detalle y los
+comandos para crear el grupo están en [`security.md`](security.md#el-token).
+
 ## Sobre de salida
 
 Toda herramienta devuelve **una cadena JSON**, no un objeto estructurado. Esto garantiza que todos

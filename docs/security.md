@@ -81,15 +81,31 @@ servidor MCP expuesto por red sin esas capas no es un despliegue soportado.
      "ApplicationRestTokens": {
        "REPLACE_WITH_A_LONG_RANDOM_TOKEN": {
          "Username": "mcp-agent",
-         "UserGroupName": "guest"
+         "UserGroupName": "mcp-rest"
        }
      }
    }
    ```
 
+   `UserGroupName` se compara de forma exacta y en cada petición: si el grupo no existe o está mal
+   escrito, todas las rutas protegidas responden `403`. El nombre del grupo es lo que define los
+   permisos, no el `Username`, que es solo una etiqueta de registro.
+
 4. Use un token largo y aleatorio (por ejemplo, 32 bytes en base64url generados con un gestor de
    contraseñas o `openssl rand -base64 32`). No reutilice tokens entre servidores.
-5. Asigne al grupo solo los permisos necesarios. Para lectura:
+5. Cree un grupo dedicado, sin grupo padre, y asígnele solo los permisos necesarios. Desde la API
+   REST, con un token administrativo temporal:
+
+   ```bash
+   curl -sS -G "http://127.0.0.1:7878/v2/groups/create" \
+     --data-urlencode "group=mcp-rest" \
+     --data-urlencode "parent=" \
+     --data-urlencode "permissions=tshock.rest.users.info,tshock.rest.users.view,tshock.rest.groups.view,tshock.rest.bans.view" \
+     --data-urlencode "chatcolor=255,255,255" \
+     --data-urlencode "token=$ADMIN_TOKEN"
+   ```
+
+   No use `guest` como padre: hereda permisos de juego que el gateway no necesita. Para lectura:
 
    - `tshock.rest.users.info`
    - `tshock.rest.users.view`
@@ -104,7 +120,12 @@ servidor MCP expuesto por red sin esas capas no es un despliegue soportado.
    - `tshock.rest.mute`
    - `tshock.rest.cfg`
 
-6. Reinicie TShock para que la configuración tenga efecto.
+   `tshock.rest.cfg` es más ancho de lo que parece: además de `world/save` y `server/reload`, habilita
+   las rutas de autoguardado, que el gateway no expone. No hay un permiso separado para guardar el
+   mundo; si necesita un token estrictamente de lectura, renuncie a `save_world` y `reload_config`.
+
+6. Reinicie TShock para que `ApplicationRestTokens` tenga efecto. Los cambios de permisos dentro del
+   grupo no requieren reinicio: se evalúan en la siguiente petición.
 
 ### Cómo se transporta
 

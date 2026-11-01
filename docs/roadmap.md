@@ -26,6 +26,7 @@ detalles de entorno que no son evidentes desde el código.
 | Contrato de salida | Sobre JSON estable `ok` / `error` |
 | Pruebas | 109 pruebas xUnit y 17 comprobaciones e2e por stdio |
 | Verificación real | Lectura, escritura, errores y redacción probados con un cliente de Terraria en la LAN |
+| Privilegio mínimo | Grupo dedicado `mcp-rest` sin permisos de escritura; la escritura tiene dos barreras (flag del gateway y permisos de TShock) |
 | Distribución | Dockerfile multi-stage y workflow de CI |
 
 ### Lo que no existe todavía
