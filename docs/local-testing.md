@@ -94,6 +94,44 @@ detiene, revisa los logs antes de reintentar.
 > El token es visible en `docker inspect` porque viaja como argumento. Para una prueba local es
 > aceptable; en producción usa un token en `config.json` y un grupo con permisos mínimos.
 
+### Token en `config.json` (necesario para `reload_config`)
+
+Con `-rest-token`, la herramienta `reload_config` falla siempre con `500`: al recargar, TShock
+vuelve a parsear la línea de comandos y ejecuta `RESTStartupTokens.Add(token, ...)` sobre una clave
+que ya existe (`TShock.cs`). Además, el mensaje de error de TShock incluye el token en claro.
+
+Después del primer arranque, mueve el token a la configuración y arranca sin los flags de REST:
+
+```bash
+docker stop tshock-test && docker rm tshock-test
+
+docker run --rm -v "$DATA/tshock:/tshock" --entrypoint sh \
+  ghcr.io/pryaxis/tshock:latest -c "
+  sed -i 's/\"RestApiEnabled\": false,/\"RestApiEnabled\": true,/' /tshock/config.json
+  sed -i 's|\"ApplicationRestTokens\": {}|\"ApplicationRestTokens\": { \"$TOKEN\": { \"Username\": \"null\", \"UserGroupName\": \"superadmin\" } }|' /tshock/config.json
+  "
+
+docker run -d --name tshock-test \
+  -p 127.0.0.1:7777:7777 \
+  -p 127.0.0.1:7878:7878 \
+  -v "$DATA/tshock:/tshock" \
+  -v "$DATA/worlds:/worlds" \
+  -v "$DATA/plugins:/plugins" \
+  ghcr.io/pryaxis/tshock:latest \
+  -world /worlds/Test.wld -port 7777 -maxplayers 8
+```
+
+La clave del diccionario es el token en claro (no un hash) y el valor usa el esquema
+`{"Username": "null", "UserGroupName": "superadmin"}`. Comprueba que la configuración sigue siendo
+JSON válido antes de arrancar y que una ruta protegida responde:
+
+```bash
+python3 -c 'import json,os; json.load(open(os.path.expanduser("~/.local/share/tshock-mcp/tshock/config.json")))'
+curl -s -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:7878/world/read?token=$TOKEN"
+```
+
+Con este arranque el token no aparece en `docker inspect` y `reload_config` funciona.
+
 ### Multijugador desde otra PC de la LAN
 
 El binding de arriba permite conectarse solo desde el host. Para jugar desde otra PC:
@@ -337,14 +375,24 @@ opencode mcp list
 | Herramienta | Prueba | Verificación |
 | --- | --- | --- |
 | `broadcast` | «Envía un mensaje que diga prueba MCP» | Visible en el juego o en los logs |
-| `save_world` | «Guarda el mundo» | Archivo `.wld` actualizado |
-| `reload_config` | «Recarga la configuración» | Respuesta de éxito |
+| `save_world` | «Guarda el mundo» | Archivo `.wld` actualizado y `.bak` creado |
+| `reload_config` | «Recarga la configuración» | Respuesta de éxito (requiere el token en `config.json`) |
 | `kick_player` | Con un jugador conectado: «Expulsa a X» | El jugador pierde la conexión |
 
 `kill_player` y `mute_player` requieren un jugador conectado. Para probar la redacción, conecta un
 cliente de Terraria y pide `player_info`: la IP debe aparecer como `<redacted>`.
 
-Al terminar, vuelve a `TSHOCK_MCP_ALLOW_WRITE=false` y reinicia el servicio.
+Notas observadas en TShock 6.2.1.0 con cliente 1.4.5.8:
+
+- `save_world` responde antes de que termine la escritura en disco; espera unos segundos antes de
+  comparar la fecha del `.wld`.
+- `kick_player` devolvió `200` («Player X was kicked»), pero el cliente quedó congelado en lugar de
+  volver al menú y TShock mantuvo la sesión como activa. Si ves un jugador fantasma, reinicia el
+  contenedor para liberar el cupo.
+
+Al terminar, vuelve a `TSHOCK_MCP_ALLOW_WRITE=false`. No hace falta reiniciar: OpenCode recarga la
+configuración del proyecto y el gateway vuelve a responder `write_disabled`, sin tráfico al
+servidor.
 
 ---
 
@@ -383,6 +431,7 @@ El token de `~/.config/tshock-mcp/token` se puede conservar para la próxima pru
 | `tshock` no aparece en `opencode mcp list` | Configuración en el proyecto equivocado o servicio sin reiniciar | Repetir desde la raíz, `opencode service restart` |
 | El host rechaza la sesión MCP | El comando escribe en stdout o la ruta no existe | Usar el binario compilado y el envoltorio; revisar logs |
 | `write_disabled` | Escritura desactivada | `TSHOCK_MCP_ALLOW_WRITE=true` y reiniciar |
+| `reload_config` devuelve `500` | Token inyectado con `-rest-token`; TShock lo reañade al recargar | Mover el token a `config.json` y arrancar sin ese flag (ver §2) |
 | Disco lleno | Imágenes y caché de Docker | `docker system df`; limpiar solo lo que se entienda |
 
 ---
