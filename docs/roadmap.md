@@ -336,10 +336,11 @@ log. La comprobación de que el pump de respaldo queda inactivo es el propio con
 | --- | --- |
 | La suite de Fase 0 sigue en verde sin cambios de contrato. | Hecho: 212 pruebas y 52 checks e2e. |
 | El plugin carga en TShock 6.2.1 y se descarga sin dejar hilos ni puertos abiertos. | Hecho para la carga; la descarga en caliente no existe. |
-| Crear y eliminar una región desde MCP se refleja en el servidor. | Hecho con puente falso (incluida la confirmación); verificación real pendiente. |
+| Crear y eliminar una región desde MCP se refleja en el servidor. | Hecho y verificado contra TShock 6.2.1.0, con elicitation real. |
 | `events_since` devuelve eventos ordenados y estables entre reconexiones. | Hecho con puente falso (unitarias y e2e); falta la verificación con jugadores reales. |
 | Un bridge caído no impide usar las tools REST. | Hecho y probado en la e2e: `bridge_unavailable` sin afectar a REST. |
 | Ninguna mutación se ejecuta fuera del hilo principal. | Hecho en las rutas de región del plugin. |
+| La política de propietario la aplica el servidor. | Hecho: `owner_not_allowed` verificado en vivo con la lista vacía. |
 | El token del bridge no aparece en logs ni en respuestas. | Verificado en el plugin y en la e2e del gateway. |
 | Toda tool del puente tiene prueba MCP por stdio. | Hecho para `events_since`; las tools nuevas lo heredan como requisito. |
 
@@ -721,6 +722,26 @@ Trampas de esta sesión:
   `bridge_auth_error` esconde información que el agente necesita.
 - `InputRequiredException` debe reenviarse desde el filtro de errores; si el filtro la captura, el
   humano nunca ve la pregunta.
+
+### Continuación: verificación real de regiones (1 de noviembre de 2026)
+
+Tras desplegar el plugin con la política de propietario y el casing corregido, verificado **por MCP**
+con el binario real y los secretos leídos de archivos:
+
+- `regions_list` devuelve camelCase y el mundo vacío después de limpiar.
+- `region_create` sin `owner` crea con `mcp-gateway`.
+- Repetir el nombre devuelve `region_exists` (409).
+- `owner: "mallory"` y `owner: "alice"` devuelven `owner_not_allowed` (403) con la lista vacía: el
+  default seguro funciona.
+- `region_info` devuelve el registro completo tras crearlo.
+- `region_delete` sin confirmación devuelve `confirmation_required`; con `confirm: true` borra.
+- Repetir el borrado devuelve `region_not_found`.
+- Elicitation real: el cliente declaró la capacidad, el servidor preguntó y el borrado se completó
+  solo tras aceptar.
+- `events_since` emitió `region.created` y `region.deleted` con sus cursores.
+- El token del puente no apareció en `stderr`.
+
+Pendiente de la fase: `CommandCatalog` y `GET /v1/commands`.
 
 ### No objetivos
 

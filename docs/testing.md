@@ -120,9 +120,9 @@ puente solo por haberla probado con `curl`.
 | Regiones del puente | No | Verificado manualmente | No existe tool | Parcial: crear, leer y borrar |
 | Eventos del puente | Sí (`EventBuffer`) | Verificado manualmente | No existe tool | Parcial: región, entrada y comando |
 | `BridgeClient` | Sí (falso HTTP) | No aplica | Sí | No |
-| `events_since` | Sí (validación) | No aplica | Sí: backlog, cursor, 410, argumentos y degradación | Parcial: eventos reales capturados por MCP |
-| `regions_list`, `region_info` | Sí (validación) | No aplica | Sí: lista, detalle, 404 y argumentos | Parcial: lectura verificada por MCP |
-| `region_create`, `region_delete` | Sí (política y confirmación) | No aplica | Sí: escritura, duplicado, propietario, confirmación y elicitation | Pendiente |
+| `events_since` | Sí (validación) | No aplica | Sí: backlog, cursor, 410, argumentos y degradación | Sí: los 8 tipos de evento capturados por MCP |
+| `regions_list`, `region_info` | Sí (validación) | No aplica | Sí: lista, detalle, 404 y argumentos | Sí: lectura contra el mundo real |
+| `region_create`, `region_delete` | Sí (política y confirmación) | No aplica | Sí: escritura, duplicado, propietario, confirmación y elicitation | Sí: crear, borrar y política con elicitación real |
 | Tools de región | No existen | No aplica | No existen | No |
 
 Esta tabla debe actualizarse en el mismo cambio que la funcionalidad. Si una fila dice «No existe»,
