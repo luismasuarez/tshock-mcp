@@ -342,6 +342,7 @@ Un token con permisos de escritura equivale a control operativo del servidor.
   mapeo de errores.
 - [docs/tools.md](docs/tools.md): referencia completa de las 18 herramientas.
 - [docs/security.md](docs/security.md): modelo de amenazas y guía para operadores.
+- [docs/roadmap.md](docs/roadmap.md): estado, decisiones, fases siguientes y contexto para retomar.
 - [AGENTS.md](AGENTS.md): reglas del repositorio para agentes de IA.
 
 ## Licencia

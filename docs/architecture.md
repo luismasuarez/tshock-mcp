@@ -129,4 +129,5 @@ Reglas del sobre:
 - Reintentos, caché de respuestas y agregación de varias llamadas.
 
 Cualquier propuesta que cruce estos límites debe discutirse como cambio de fase, no como parche
-dentro de la Fase 0.
+dentro de la Fase 0. El plan de las fases siguientes y el contexto para retomar el proyecto están en
+[roadmap.md](roadmap.md).

@@ -59,7 +59,7 @@ src/TShock.MCP.Server/
   TShock/                        Cliente REST, auditoría, redacción y sobre de resultados
   Tools/                         ReadTools.cs y WriteTools.cs
 tests/                           Proyecto de pruebas unitarias y e2e (mcp_stdio_smoke.py)
-docs/                            Arquitectura, herramientas y seguridad
+docs/                            Arquitectura, herramientas, seguridad y roadmap
 docker/                          Dockerfile y ejemplo para Claude Desktop
 .github/workflows/build.yml      CI de compilación y pruebas
 ```
