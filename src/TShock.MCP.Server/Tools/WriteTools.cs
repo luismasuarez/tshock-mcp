@@ -11,8 +11,6 @@ namespace TShock.McpServer.Tools;
 [McpServerToolType]
 public sealed class WriteTools(ITShockClient client, TShockOptions options)
 {
-    private const string InvalidArgumentCode = "invalid_argument";
-
     [McpServerTool(
         Name = "broadcast",
         ReadOnly = false,
@@ -175,7 +173,7 @@ public sealed class WriteTools(ITShockClient client, TShockOptions options)
         options.AllowWrite
             ? null
             : ToolResults.Error(
-                "write_disabled",
+                ErrorCodes.WriteDisabled,
                 "Write tools are disabled. Set TSHOCK_MCP_ALLOW_WRITE=true to enable them.");
 
     /// <summary>
@@ -184,7 +182,7 @@ public sealed class WriteTools(ITShockClient client, TShockOptions options)
     /// </summary>
     private static string? RequireText(string? value, string parameterName) =>
         string.IsNullOrWhiteSpace(value)
-            ? ToolResults.Error(InvalidArgumentCode, $"'{parameterName}' must not be empty.")
+            ? ToolResults.Error(ErrorCodes.InvalidArgument, $"'{parameterName}' must not be empty.")
             : null;
 
     /// <summary>Drops whitespace-only optional values so they are not sent to TShock.</summary>

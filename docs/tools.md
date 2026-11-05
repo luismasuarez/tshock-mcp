@@ -119,19 +119,9 @@ TShock también informa errores **con estado 200 y un campo `error` en el cuerpo
 mapean igual a `rest_error`, con `httpStatus: 200`, para que el modelo nunca trate como éxito una
 respuesta que TShock marcó como fallida.
 
-Códigos posibles:
-
-| Código | Significado |
-| --- | --- |
-| `write_disabled` | Herramienta de escritura invocada con la escritura deshabilitada. |
-| `invalid_argument` | Argumento faltante, vacío o de tipo incorrecto; se devuelve sin llamar a TShock. |
-| `rest_error` | TShock respondió con un estado HTTP de error, o con estado 200 y un campo `error` en el cuerpo. |
-| `network_error` | Fallo de conexión, DNS o TLS. |
-| `timeout` | Se superó el timeout configurado. |
-| `cancelled` | La operación fue cancelada por el anfitrión. |
-| `invalid_response` | La respuesta no es JSON válido o no tiene la forma esperada. |
-| `response_too_large` | La respuesta supera el límite interno de lectura. |
-| `unexpected_error` | Fallo no clasificado. |
+Todos los códigos posibles, con su capa y su acción sugerida, están en la tabla canónica de
+[`architecture.md`](architecture.md#mapeo-de-errores). Esta sección no mantiene una segunda lista
+para que no pueda divergir.
 
 ## Ejemplos
 
@@ -286,12 +276,11 @@ Comportamiento:
   arrancar un cliente nuevo.
 - **Paginación.** `hasMore` indica si quedan eventos posteriores. El límite máximo por llamada es
   500.
-- **Errores.** `bridge_unavailable` (puente apagado o sin configurar), `bridge_timeout`,
-  `bridge_auth_error`, `bridge_error`, `cursor_expired`, `region_not_found`, `region_exists`,
-  `owner_not_allowed`, `confirmation_required`, `confirmation_declined` y `write_disabled`. `cursor_expired`
-  agrega un objeto `details` dentro de `error` con `reason` (`evicted` o `unknown`), `oldest`,
-  `head`, `resumeCursor` y `session`, para que el agente reanude sin adivinar. `region_not_found`
-  solo significa que el nombre pedido no existe: un fallo del puente sigue siendo `bridge_error`.
+- **Errores.** Usa los códigos canónicos de [`architecture.md`](architecture.md#mapeo-de-errores).
+  `cursor_expired` agrega un objeto `details` dentro de `error` con `reason` (`evicted` o `unknown`),
+  `oldest`, `head`, `resumeCursor` y `session`, para que el agente reanude sin adivinar.
+  `region_not_found` solo significa que el nombre pedido no existe: un fallo del puente sigue siendo
+  `bridge_error`.
 - **Sin puente configurado**, la herramienta sigue en el catálogo y responde `bridge_unavailable`.
   Un agente que no ve la herramienta no puede diagnosticar nada; un error explicado sí.
 - **Contenido no confiable.** Los eventos con texto que un jugador puede influir traen

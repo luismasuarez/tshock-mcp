@@ -280,6 +280,40 @@ registros de región lo obtienen de la política del serializador. Un `RegionDto
 `tests/TShock.AgentBridge.Tests/SerializationContractTests.cs` fija este contrato: sin esa prueba, un
 cambio de serialización puede devolver PascalCase al gateway sin que nada falle.
 
+## Códigos del protocolo
+
+Los cuerpos de error del puente usan estos discriminadores. Son **internos**: el gateway los
+traduce a los códigos públicos de [`architecture.md`](architecture.md#mapeo-de-errores) y nunca
+expone uno sin traducir. La lista se verifica contra `WireCodes.All` en
+`tests/TShock.AgentBridge.Tests/WireCodesTests.cs`.
+
+<!-- BEGIN BRIDGE WIRE CODES -->
+| Código | HTTP | Significado | Código público resultante |
+| --- | --- | --- | --- |
+| `unauthorized` | 401 | Falta el bearer token o no coincide. | `bridge_auth_error` |
+| `not_found` | 404 | Ruta desconocida. | `bridge_error` |
+| `internal_error` | 500 | Excepción no controlada dentro del plugin. | `bridge_error` |
+| `invalid_json` | 400 | Cuerpo de `POST /v1/regions` ausente o mal formado. | `invalid_argument` en `region_create`; `bridge_error` en el resto |
+| `method_not_allowed` | 405 | Método HTTP no soportado en la ruta. | `bridge_error` |
+| `invalid_cursor` | 400 | `cursor` no numérico o negativo. | `bridge_error`; `events_since` lo valida antes de la red |
+| `invalid_limit` | 400 | `limit` fuera del rango `1..500`. | `bridge_error`; `events_since` lo valida antes de la red |
+| `cursor_expired` | 410 | El cursor ya no está en el ring buffer. | `cursor_expired` |
+| `name_required` | 400 | Nombre de región vacío. | `invalid_argument` en las rutas de región; `bridge_error` en el resto |
+| `invalid_size` | 400 | Ancho o alto no positivo. | `invalid_argument` |
+| `invalid_position` | 400 | `x` o `y` negativo. | `invalid_argument` |
+| `out_of_bounds` | 400 | La región excede los límites del mundo. | `invalid_argument` |
+| `owner_not_allowed` | 403 | El propietario no está en la política del servidor. | `owner_not_allowed` |
+| `region_not_found` | 404 | La región no existe. | `region_not_found` |
+| `region_exists` | 409 | Ya existe una región con ese nombre. | `region_exists` |
+| `create_failed` | 500 | `AddRegion` devolvió `false`. | `bridge_error` |
+| `delete_failed` | 500 | `DeleteRegion` devolvió `false`. | `bridge_error` |
+<!-- END BRIDGE WIRE CODES -->
+
+La traducción es deliberadamente estrecha: solo `region_not_found`, `region_exists`,
+`owner_not_allowed` y `cursor_expired` tienen un código público propio. Cualquier otro wire code se
+colapsa en `bridge_error`, salvo los `400` de las tools de región, que se presentan como
+`invalid_argument` porque describen una petición mal formada.
+
 ## Lo que todavía no existe
 
 - `GET /v1/commands` y la allowlist de ejecución.

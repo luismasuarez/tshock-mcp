@@ -15,8 +15,6 @@ namespace TShock.McpServer.Tools;
 [McpServerToolType]
 public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
 {
-    private const string InvalidArgumentCode = "invalid_argument";
-    private const string RegionNotFoundCode = "region_not_found";
     internal const string ConfirmationKey = "confirm_region_delete";
 
     /// <summary>Matches the bridge contract: 500 events per page.</summary>
@@ -47,14 +45,14 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
         if (cursor is < 0)
         {
             return Task.FromResult(ToolResults.Error(
-                InvalidArgumentCode,
+                ErrorCodes.InvalidArgument,
                 "'cursor' must be zero or greater."));
         }
 
         if (limit is { } requested && requested is < 1 or > MaxEventLimit)
         {
             return Task.FromResult(ToolResults.Error(
-                InvalidArgumentCode,
+                ErrorCodes.InvalidArgument,
                 $"'limit' must be between 1 and {MaxEventLimit}."));
         }
 
@@ -142,19 +140,19 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
 
         if (width <= 0 || height <= 0)
         {
-            return ToolResults.Error(InvalidArgumentCode, "'width' and 'height' must be greater than zero.");
+            return ToolResults.Error(ErrorCodes.InvalidArgument, "'width' and 'height' must be greater than zero.");
         }
 
         if (x < 0 || y < 0)
         {
-            return ToolResults.Error(InvalidArgumentCode, "'x' and 'y' must be zero or greater.");
+            return ToolResults.Error(ErrorCodes.InvalidArgument, "'x' and 'y' must be zero or greater.");
         }
 
         if (owner is not null &&
             (string.IsNullOrWhiteSpace(owner) || owner.Length > MaxRegionNameLength || owner.Any(char.IsControl)))
         {
             return ToolResults.Error(
-                InvalidArgumentCode,
+                ErrorCodes.InvalidArgument,
                 "'owner' must be a non-empty name without control characters.");
         }
 
@@ -218,7 +216,7 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
         {
             case DeleteDecision.Decline:
                 return ToolResults.Error(
-                    "confirmation_declined",
+                    ErrorCodes.ConfirmationDeclined,
                     $"The deletion of region '{name}' was declined by the operator.");
 
             case DeleteDecision.Ask:
@@ -248,7 +246,7 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
 
             case DeleteDecision.RequireConfirmation:
                 return ToolResults.Error(
-                    "confirmation_required",
+                    ErrorCodes.ConfirmationRequired,
                     "Deleting a region cannot be undone. This client cannot ask the operator, so " +
                     "pass 'confirm: true' to proceed.");
 
@@ -335,27 +333,27 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
         }
 
         // Transport, auth and cursor failures keep their own codes.
-        if (!string.Equals(result.ErrorCode, "bridge_error", StringComparison.Ordinal))
+        if (!string.Equals(result.ErrorCode, ErrorCodes.BridgeError, StringComparison.Ordinal))
         {
             return ToolResults.From(result);
         }
 
         return result.BridgeError switch
         {
-            RegionNotFoundCode => ToolResults.Error(
-                RegionNotFoundCode,
+            BridgeWireCodes.RegionNotFound => ToolResults.Error(
+                ErrorCodes.RegionNotFound,
                 $"The region '{regionName}' does not exist.",
                 404),
-            "region_exists" => ToolResults.Error(
-                "region_exists",
+            BridgeWireCodes.RegionExists => ToolResults.Error(
+                ErrorCodes.RegionExists,
                 $"The region '{regionName}' already exists.",
                 409),
-            "owner_not_allowed" => ToolResults.Error(
-                "owner_not_allowed",
+            BridgeWireCodes.OwnerNotAllowed => ToolResults.Error(
+                ErrorCodes.OwnerNotAllowed,
                 "The server's bridge policy does not allow that region owner.",
                 403),
             _ when result.StatusCode == 400 => ToolResults.Error(
-                InvalidArgumentCode,
+                ErrorCodes.InvalidArgument,
                 result.ErrorMessage ?? "The bridge rejected the region request.",
                 400),
             _ => ToolResults.From(result)
@@ -371,20 +369,20 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
-            return ToolResults.Error(InvalidArgumentCode, "'name' must not be empty.");
+            return ToolResults.Error(ErrorCodes.InvalidArgument, "'name' must not be empty.");
         }
 
         if (name.Length > MaxRegionNameLength)
         {
             return ToolResults.Error(
-                InvalidArgumentCode,
+                ErrorCodes.InvalidArgument,
                 $"'name' must be at most {MaxRegionNameLength} characters.");
         }
 
         if (name.Contains('/') || name.Any(char.IsControl))
         {
             return ToolResults.Error(
-                InvalidArgumentCode,
+                ErrorCodes.InvalidArgument,
                 "'name' must not contain '/' or control characters.");
         }
 
@@ -396,7 +394,7 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
         options.AllowWrite
             ? null
             : ToolResults.Error(
-                "write_disabled",
+                ErrorCodes.WriteDisabled,
                 "Writing is disabled. Set TSHOCK_MCP_ALLOW_WRITE=true to enable region changes.");
 
     private async Task<string> CallAsync(
@@ -413,7 +411,7 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
         if (!result.Ok && result.StatusCode == 404 && regionName is not null)
         {
             return ToolResults.Error(
-                RegionNotFoundCode,
+                ErrorCodes.RegionNotFound,
                 $"The region '{regionName}' does not exist.",
                 404);
         }

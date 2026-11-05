@@ -113,7 +113,7 @@ internal sealed class BridgeServer : IDisposable
         {
             if (!IsAuthorized(context.Request))
             {
-                await WriteAsync(context, 401, new { error = "unauthorized" }).ConfigureAwait(false);
+                await WriteAsync(context, 401, new { error = WireCodes.Unauthorized }).ConfigureAwait(false);
                 return;
             }
 
@@ -139,7 +139,7 @@ internal sealed class BridgeServer : IDisposable
                         return;
                     }
 
-                    await WriteAsync(context, 404, new { error = "not_found" }).ConfigureAwait(false);
+                    await WriteAsync(context, 404, new { error = WireCodes.NotFound }).ConfigureAwait(false);
                     return;
             }
         }
@@ -149,7 +149,7 @@ internal sealed class BridgeServer : IDisposable
             TShockAPI.TShock.Log.ConsoleError($"{PluginName}: request failed: {ex.Message}");
             try
             {
-                await WriteAsync(context, 500, new { error = "internal_error" }).ConfigureAwait(false);
+                await WriteAsync(context, 500, new { error = WireCodes.InternalError }).ConfigureAwait(false);
             }
             catch (Exception)
             {
@@ -185,13 +185,13 @@ internal sealed class BridgeServer : IDisposable
                 }
                 catch (JsonException)
                 {
-                    await WriteAsync(context, 400, new { error = "invalid_json" }).ConfigureAwait(false);
+                    await WriteAsync(context, 400, new { error = WireCodes.InvalidJson }).ConfigureAwait(false);
                     return;
                 }
 
                 if (body is null)
                 {
-                    await WriteAsync(context, 400, new { error = "invalid_json" }).ConfigureAwait(false);
+                    await WriteAsync(context, 400, new { error = WireCodes.InvalidJson }).ConfigureAwait(false);
                     return;
                 }
 
@@ -206,7 +206,7 @@ internal sealed class BridgeServer : IDisposable
                 return;
             }
 
-            await WriteAsync(context, 405, new { error = "method_not_allowed" }).ConfigureAwait(false);
+            await WriteAsync(context, 405, new { error = WireCodes.MethodNotAllowed }).ConfigureAwait(false);
             return;
         }
 
@@ -216,7 +216,7 @@ internal sealed class BridgeServer : IDisposable
             var region = await _regions.GetAsync(name).ConfigureAwait(false);
             if (region is null)
             {
-                await WriteAsync(context, 404, new { error = "region_not_found" }).ConfigureAwait(false);
+                await WriteAsync(context, 404, new { error = WireCodes.RegionNotFound }).ConfigureAwait(false);
                 return;
             }
 
@@ -229,7 +229,7 @@ internal sealed class BridgeServer : IDisposable
             var (deleted, error) = await _regions.DeleteAsync(name).ConfigureAwait(false);
             if (!deleted)
             {
-                await WriteAsync(context, StatusForRegionError(error ?? "delete_failed"), new { error = error ?? "delete_failed" }).ConfigureAwait(false);
+                await WriteAsync(context, StatusForRegionError(error ?? WireCodes.DeleteFailed), new { error = error ?? WireCodes.DeleteFailed }).ConfigureAwait(false);
                 return;
             }
 
@@ -237,15 +237,16 @@ internal sealed class BridgeServer : IDisposable
             return;
         }
 
-        await WriteAsync(context, 405, new { error = "method_not_allowed" }).ConfigureAwait(false);
+        await WriteAsync(context, 405, new { error = WireCodes.MethodNotAllowed }).ConfigureAwait(false);
     }
 
-    private static int StatusForRegionError(string error) => error switch
+    internal static int StatusForRegionError(string error) => error switch
     {
-        "name_required" or "invalid_size" or "invalid_position" or "out_of_bounds" or "invalid_json" => 400,
-        "owner_not_allowed" => 403,
-        "region_not_found" => 404,
-        "region_exists" => 409,
+        WireCodes.NameRequired or WireCodes.InvalidSize or WireCodes.InvalidPosition
+            or WireCodes.OutOfBounds or WireCodes.InvalidJson => 400,
+        WireCodes.OwnerNotAllowed => 403,
+        WireCodes.RegionNotFound => 404,
+        WireCodes.RegionExists => 409,
         _ => 500
     };
 
@@ -254,7 +255,7 @@ internal sealed class BridgeServer : IDisposable
         var request = context.Request;
         if (request.HttpMethod != "GET")
         {
-            await WriteAsync(context, 405, new { error = "method_not_allowed" }).ConfigureAwait(false);
+            await WriteAsync(context, 405, new { error = WireCodes.MethodNotAllowed }).ConfigureAwait(false);
             return;
         }
 
@@ -265,7 +266,7 @@ internal sealed class BridgeServer : IDisposable
             if (!long.TryParse(rawCursor, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
                 || parsed < 0)
             {
-                await WriteAsync(context, 400, new { error = "invalid_cursor" }).ConfigureAwait(false);
+                await WriteAsync(context, 400, new { error = WireCodes.InvalidCursor }).ConfigureAwait(false);
                 return;
             }
 
@@ -280,7 +281,7 @@ internal sealed class BridgeServer : IDisposable
                 || parsed < 1
                 || parsed > EventBuffer.MaxPageSize)
             {
-                await WriteAsync(context, 400, new { error = "invalid_limit" }).ConfigureAwait(false);
+                await WriteAsync(context, 400, new { error = WireCodes.InvalidLimit }).ConfigureAwait(false);
                 return;
             }
 
@@ -292,7 +293,7 @@ internal sealed class BridgeServer : IDisposable
         {
             await WriteAsync(context, 410, new
             {
-                error = "cursor_expired",
+                error = WireCodes.CursorExpired,
                 reason = result.Reason,
                 oldest = result.Oldest,
                 head = result.Head,

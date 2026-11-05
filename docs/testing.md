@@ -66,8 +66,9 @@ Existe para las tools del puente y forma parte de `tests/e2e/mcp_stdio_smoke.py`
    rechazarla deja la región, aceptarla la borra.
 7. Verifica el sobre, la exclusividad del cursor, `hasMore`, `cursor_expired` con `details`,
    `region_not_found`, `region_exists`, `owner_not_allowed`, `confirmation_required`,
-   `confirmation_declined`, que los argumentos inválidos no llegan al puente y que el token no
-   aparece en `stderr`.
+   `confirmation_declined`, que los argumentos inválidos no llegan al puente, que todo
+   `error.code` observado pertenece a la tabla canónica de
+   [`architecture.md`](architecture.md#mapeo-de-errores) y que el token no aparece en `stderr`.
 6. Apaga el puente y comprueba que `events_since` degrada a `bridge_unavailable` mientras las tools
    REST siguen funcionando.
 
@@ -92,9 +93,9 @@ puente solo por haberla probado con `curl`.
 - [ ] La ruta existe en el plugin y está documentada en `docs/bridge.md`.
 - [ ] La llamada pasa por `BridgeClient`, no por un `HttpClient` ad hoc.
 - [ ] El token del puente no se registra ni se devuelve.
-- [ ] Los errores se traducen a códigos estables (`bridge_unavailable`, `bridge_timeout`,
-      `bridge_auth_error`, `bridge_error`, `cursor_expired`, `region_not_found`, `region_exists`,
-      `owner_not_allowed`, `confirmation_required`, `confirmation_declined`).
+- [ ] Los errores se traducen a los códigos públicos de
+      [`architecture.md`](architecture.md#mapeo-de-errores); ningún wire code del puente llega al
+      agente sin traducir.
 - [ ] Si escribe, comprueba `TSHOCK_MCP_ALLOW_WRITE`; las operaciones destructivas exigen
       confirmación.
 - [ ] Está documentada en `docs/tools.md`, `docs/bridge.md` y el `README.md`.

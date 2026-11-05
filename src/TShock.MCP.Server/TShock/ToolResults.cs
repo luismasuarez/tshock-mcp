@@ -25,13 +25,13 @@ public static class ToolResults
     public static string From(TShockResult result) =>
         result.Ok
             ? Ok(result.Body)
-            : Error(result.ErrorCode ?? "unknown_error", result.ErrorMessage ?? "Unknown error", result.StatusCode);
+            : Error(result.ErrorCode ?? ErrorCodes.UnknownError, result.ErrorMessage ?? "Unknown error", result.StatusCode);
 
     public static string From(BridgeResult result) =>
         result.Ok
             ? Ok(result.Body)
             : Error(
-                result.ErrorCode ?? "unknown_error",
+                result.ErrorCode ?? ErrorCodes.UnknownError,
                 result.ErrorMessage ?? "Unknown error",
                 result.StatusCode,
                 result.ErrorDetails);

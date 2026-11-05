@@ -28,7 +28,7 @@ Reglas que ninguna entrada puede romper:
 
 | # | Mejora | Prioridad | Esfuerzo | Depende de | Estado |
 | --- | --- | --- | --- | --- | --- |
-| P1-09 | Centralizar los códigos de error | P1 | 1 sesión | — | Pendiente |
+| P1-09 | Taxonomía única de códigos de error | P1 | 1 sesión | — | Hecho |
 | P0-02 | Límites de longitud en argumentos | P0 | 1 sesión | — | Pendiente |
 | P0-06 | `title` en las 23 tools | P0 | 1 sesión | — | Pendiente |
 | P2-15 | Snapshot del contrato de `tools/list` | P2 | 1 sesión | P0-06 | Pendiente |
@@ -36,6 +36,7 @@ Reglas que ninguna entrada puede romper:
 | P0-04 | Correlación en la auditoría | P0 | 1 sesión | — | Pendiente |
 | P0-05 | Paginación opcional en listas | P0 | 1 sesión | — | Pendiente |
 | P0-01 | `structuredContent` y `outputSchema` | P0 | 2 sesiones | P1-09, P2-15 | Pendiente |
+| P0-07 | `isError` coherente con el sobre | P0 | 1 sesión | P0-01 | Pendiente |
 | P1-07 | Partir las tools por dominio | P1 | 1 sesión | P2-15 | Pendiente |
 | P1-08 | Rutas tipadas y capa de dominio | P1 | 2 sesiones | P1-07 | Pendiente |
 | P1-11 | Toolsets por variable de entorno | P1 | 1 sesión | P1-07 | Pendiente |
@@ -137,6 +138,23 @@ Reglas que ninguna entrada puede romper:
   («Server status», «List players»). Actualizar `docs/tools.md`.
 - **Aceptación:** prueba que exige `title` no vacío en las 23; snapshot actualizado.
 
+### P0-07 · `isError` coherente con el sobre
+
+- **Prioridad:** P0 · **Esfuerzo:** 1 sesión · **Depende de:** P0-01
+- **Problema:** los errores de negocio devuelven `{"ok":false,...}` con `isError:false`; solo las
+  excepciones de binding del filtro de `Program.cs` marcan `IsError = true`. Un cliente que
+  ramifica por el flag del protocolo trata un fallo como éxito.
+- **Evidencia:** la e2e comprueba `isError:true` solo para argumentos faltantes o mal tipados; una
+  llamada con `write_disabled` o `rest_error` devuelve el sobre con `isError` ausente o falso.
+- **Cambios:** investigar cómo el SDK 2.3.0 permite devolver `CallToolResult` desde una tool, o
+  inspeccionar el texto en un filtro de respuesta; marcar `IsError=true` cuando el sobre tenga
+  `ok:false`, sin cambiar el texto ni el contenido estructurado.
+- **Aceptación:** todo `ok:false` sale con `isError:true` y todo `ok:true` con `isError:false`; la
+  e2e lo cubre para `invalid_argument`, `write_disabled`, `rest_error` y `region_not_found`; los
+  clientes anteriores siguen recibiendo el mismo texto.
+- **Riesgo:** un filtro que reparsea el sobre puede alterar el contrato o duplicar trabajo; el texto
+  debe quedar byte a byte igual.
+
 ---
 
 ## P1 — Arquitectura
@@ -167,15 +185,32 @@ Reglas que ninguna entrada puede romper:
 - **Aceptación:** `grep` de rutas en `Tools/` no devuelve literales; las pruebas existentes siguen
   pasando sin cambios de contrato.
 
-### P1-09 · Centralizar los códigos de error
+### P1-09 · Taxonomía única y verificable de códigos de error
 
 - **Prioridad:** P1 · **Esfuerzo:** 1 sesión · **Depende de:** —
-- **Problema:** 20 códigos repetidos como literales en todo `src/`. Un typo produce un código que
-  ningún cliente conoce.
-- **Cambios:** `TShock/ErrorCodes.cs` con constantes públicas; reemplazar todos los literales.
-  Añadir una prueba que compare el conjunto con la tabla de `docs/architecture.md`.
-- **Aceptación:** no quedan literales fuera de `ErrorCodes.cs`; la prueba falla si se agrega un
-  código sin documentarlo.
+- **Problema:** no eran 20 literales sueltos. Hay 20 códigos públicos del sobre, 17 códigos internos
+  del protocolo del puente, tres constantes locales duplicadas (`InvalidArgumentCode`), un
+  `unknown_error` sin documentar y cinco documentos con listas que ya divergían. Un typo o un wire
+  code nuevo podía llegar al agente sin que nada lo detectara.
+- **Cambios:**
+  - `TShock/ErrorCodes.cs` con los 20 códigos públicos como constantes, `All` e `IsKnown`.
+  - `TShock/BridgeWireCodes.cs` con los wire codes que el gateway traduce y
+    `TShock.AgentBridge/WireCodes.cs` con los que el plugin emite. Son capas distintas y no se
+    comparten por TFM (`net8.0` frente a `net9.0`); la traducción se prueba en las tools.
+  - Reemplazo de todos los literales en los puntos de construcción; se eliminaron las tres copias
+    de `InvalidArgumentCode`.
+  - `docs/architecture.md` como tabla canónica del sobre, con marcadores; `docs/bridge.md` con la
+    tabla de wire codes; `docs/tools.md`, `docs/testing.md` y `README.md` enlazan a la canónica en
+    lugar de repetir listas.
+  - Pruebas: conjunto exacto, ausencia de duplicados, igualdad bidireccional con la documentación,
+    rechazo de literales en los constructores y una comprobación en la e2e de que todo `error.code`
+    observado pertenece a la tabla canónica.
+- **Aceptación:** no quedan literales de códigos en los puntos de construcción; agregar un código
+  sin documentarlo falla, y documentar uno inexistente también; los sobres actuales no cambian ni
+  en forma ni en texto; build, pruebas y e2e quedan verdes.
+- **Riesgo:** los códigos son API pública; este trabajo no renombra ninguno. `unknown_error` se
+  documenta como fallback interno. La prueba de fuente se limita a `src/` y a los constructores,
+  porque las descripciones de las tools mencionan códigos como texto de ayuda.
 
 ### P1-10 · Resources y prompts
 
@@ -324,12 +359,12 @@ Reglas que ninguna entrada puede romper:
 
 Las dependencias mandan, pero este orden maximiza el valor temprano:
 
-1. **P1-09** — barato y desbloquea el resto.
-2. **P0-02** — cierra un agujero real.
-3. **P0-06** — contrato visible, casi gratis.
-4. **P2-15** — congela el contrato antes de tocarlo.
-5. **P0-03**, **P0-04**, **P0-05**.
-6. **P0-01** — la más grande de P0.
+1. **P0-02** — cierra un agujero real.
+2. **P0-06** — contrato visible, casi gratis.
+3. **P2-15** — congela el contrato antes de tocarlo.
+4. **P0-03**, **P0-04**, **P0-05**.
+5. **P0-01** — la más grande de P0.
+6. **P0-07** — alinea el flag del protocolo con el sobre.
 7. **P1-07**, **P1-08**, **P1-11**, **P1-10**.
 8. **P2-12**, **P2-13**, **P2-14**, **P2-16**, **P2-17**.
 9. **P3-18** a **P3-23**.
@@ -355,3 +390,4 @@ Al terminar:
 | Fecha | Entrada | Commit | Notas |
 | --- | --- | --- | --- |
 | 2026-11-05 | Creación del backlog | — | Revisión contra spec 2026-07-28, security best practices, SDK 2.3.0 y GitHub MCP Server. |
+| 2026-11-05 | P1-09 · Taxonomía única de códigos de error | — | Commit único; 20 códigos públicos y 17 wire codes centralizados, tablas canónicas y pruebas bidireccionales. |

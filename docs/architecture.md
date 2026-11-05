@@ -53,6 +53,8 @@ Componentes internos:
 | `Configuration/TShockOptions.cs` | Lee y valida las variables de entorno; falla al arrancar si la configuración es inválida. |
 | `TShock/ITShockClient` | Ejecuta peticiones GET contra la API REST, aplica timeout y traduce fallos a resultados tipados. |
 | `TShock/ToolResults` | Serializa el sobre estable `ok` / `error`. |
+| `TShock/ErrorCodes.cs` | Catálogo público y cerrado de códigos del sobre; la tabla canónica se valida contra él. |
+| `TShock/BridgeWireCodes.cs` | Discriminadores internos del puente que el gateway traduce a códigos públicos. |
 | `Tools/ReadTools.cs` | 12 herramientas sin efectos secundarios. |
 | `Tools/WriteTools.cs` | 6 herramientas de mutación, bloqueadas salvo que se habilite la escritura. |
 | `TShock/IBridgeClient` | Cliente del puente: bearer por petición, tope de respuesta y códigos de error estables. |
@@ -104,17 +106,35 @@ ciegas podría duplicar efectos. El modelo decide si vuelve a intentar.
 
 ## Mapeo de errores
 
-| Código | Cuándo se produce | `httpStatus` | Acción sugerida |
-| --- | --- | --- | --- |
-| `write_disabled` | Se invocó una herramienta de escritura con `TSHOCK_MCP_ALLOW_WRITE` desactivado. | ausente | Habilitar la variable y reiniciar el anfitrión. |
-| `invalid_argument` | Falta un argumento obligatorio, llega vacío o tiene un tipo incorrecto. No se hizo ninguna petición HTTP. | ausente | Corregir la llamada. |
-| `rest_error` | TShock respondió con un estado HTTP de error (401, 403, 404, 500…), o con estado 200 y un campo `error` en el cuerpo. El mensaje es el texto de TShock, saneado. | presente (puede ser `200`) | Revisar token, permisos y disponibilidad del servidor. |
-| `network_error` | No se pudo establecer la conexión (DNS, conexión rechazada, TLS). | ausente | Verificar que TShock esté activo y la URL sea correcta. |
-| `timeout` | Se superó `TSHOCK_MCP_TIMEOUT_SECONDS`. | ausente | Subir el timeout o revisar la carga del servidor. |
-| `cancelled` | El anfitrión canceló la operación. | ausente | Ninguna; es una cancelación deliberada. |
-| `invalid_response` | El cuerpo no es JSON válido o no tiene la forma esperada. | presente | Revisar la versión de TShock o un proxy intermedio. |
-| `response_too_large` | La respuesta excede el límite interno de lectura. | presente | Evitar rutas que devuelvan volúmenes masivos. |
-| `unexpected_error` | Cualquier fallo no clasificado. | ausente | Revisar stderr; puede ser un defecto del servidor MCP. |
+Todo código que puede aparecer en `error.code` está en esta tabla. Es un contrato público: los
+códigos se agregan, nunca se renombran ni se reutilizan. Los códigos internos del protocolo del
+puente y su traducción se documentan en [`bridge.md`](bridge.md#códigos-del-protocolo). La lista se
+verifica contra `ErrorCodes.All` en `tests/TShock.MCP.Server.Tests/ErrorCodesTests.cs`.
+
+<!-- BEGIN ERROR CODES -->
+| Código | Capa | Cuándo se produce | `httpStatus` | Acción sugerida |
+| --- | --- | --- | --- | --- |
+| `invalid_argument` | Validación | Falta un argumento obligatorio, llega vacío, tiene un tipo incorrecto o no pasa la validación local. No se hizo ninguna petición HTTP. | ausente | Corregir la llamada. |
+| `write_disabled` | Política | Se invocó una herramienta de escritura con `TSHOCK_MCP_ALLOW_WRITE` desactivado. | ausente | Habilitar la variable y reiniciar el anfitrión. |
+| `confirmation_required` | Política | `region_delete` necesita confirmación y el cliente no puede pedirla al operador, ni se envió `confirm: true`. | ausente | Pasar `confirm: true` o usar un cliente con elicitation. |
+| `confirmation_declined` | Política | El operador rechazó la confirmación de `region_delete`. | ausente | Ninguna; no se borró nada. |
+| `rest_error` | TShock REST | TShock respondió con un estado HTTP de error (401, 403, 404, 500…), o con estado 200 y un campo `error` en el cuerpo. El mensaje es el texto de TShock, saneado. | presente (puede ser `200`) | Revisar token, permisos y disponibilidad del servidor. |
+| `network_error` | TShock REST | No se pudo establecer la conexión (DNS, conexión rechazada, TLS). | ausente | Verificar que TShock esté activo y la URL sea correcta. |
+| `timeout` | TShock REST | Se superó `TSHOCK_MCP_TIMEOUT_SECONDS` en una llamada a TShock. | ausente | Subir el timeout o revisar la carga del servidor. |
+| `cancelled` | Transporte | El anfitrión canceló la operación. | ausente | Ninguna; es una cancelación deliberada. |
+| `invalid_response` | Transporte | El cuerpo no es JSON válido o no tiene la forma esperada. | presente | Revisar la versión de TShock, el puente o un proxy intermedio. |
+| `response_too_large` | Transporte | La respuesta excede el límite interno de lectura de 5 MB. | presente | Evitar rutas que devuelvan volúmenes masivos. |
+| `unexpected_error` | Interno | Cualquier fallo no clasificado. | ausente | Revisar stderr; puede ser un defecto del servidor MCP. |
+| `unknown_error` | Interno | Un fallo llegó al sobre sin código. Es un fallback defensivo y no debería observarse. | ausente | Reportar un defecto; nunca debería ocurrir. |
+| `bridge_unavailable` | AgentBridge | El puente no está configurado o no se pudo alcanzar. | ausente | Configurar `TSHOCK_BRIDGE_URL` y `TSHOCK_BRIDGE_TOKEN`, o arrancar el plugin. |
+| `bridge_timeout` | AgentBridge | El puente no respondió dentro de `TSHOCK_BRIDGE_TIMEOUT_SECONDS`. | ausente | Revisar la carga del servidor o subir el timeout. |
+| `bridge_auth_error` | AgentBridge | El puente rechazó el bearer token (HTTP 401). | presente | Revisar `TSHOCK_BRIDGE_TOKEN`. |
+| `bridge_error` | AgentBridge | El puente respondió con un error sin traducción específica. | presente | Revisar el plugin y el estado del servidor. |
+| `cursor_expired` | AgentBridge | El cursor de eventos ya no está disponible (HTTP 410). | presente | Reanudar desde `details.resumeCursor`. |
+| `region_not_found` | AgentBridge | La región pedida no existe. | presente (404) | Corregir el nombre. |
+| `region_exists` | AgentBridge | Ya existe una región con ese nombre. | presente (409) | Elegir otro nombre. |
+| `owner_not_allowed` | AgentBridge | La política del puente no permite ese propietario. | presente (403) | Usar un propietario permitido. |
+<!-- END ERROR CODES -->
 
 Reglas del sobre:
 

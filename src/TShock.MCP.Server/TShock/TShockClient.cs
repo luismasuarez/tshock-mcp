@@ -46,7 +46,7 @@ public sealed class TShockClient : ITShockClient
             // Reject inline query strings before any network call: a path such as
             // "/v3/bans/list?token=attacker" must never reach TShock.
             result = TShockResult.TransportError(
-                "unexpected_error",
+                ErrorCodes.UnexpectedError,
                 "The TShock client rejected a path that contains an inline query string.");
         }
         else
@@ -144,13 +144,13 @@ public sealed class TShockClient : ITShockClient
 
         if (response.Content.Headers.ContentLength is { } contentLength && contentLength > HttpPayload.MaxResponseBytes)
         {
-            return TShockResult.TransportError("response_too_large", TooLargeMessage, statusCode);
+            return TShockResult.TransportError(ErrorCodes.ResponseTooLarge, TooLargeMessage, statusCode);
         }
 
         var body = await HttpPayload.ReadBodyAsync(response.Content, cancellationToken).ConfigureAwait(false);
         if (body is null)
         {
-            return TShockResult.TransportError("response_too_large", TooLargeMessage, statusCode);
+            return TShockResult.TransportError(ErrorCodes.ResponseTooLarge, TooLargeMessage, statusCode);
         }
 
         var isSuccess = statusCode is >= 200 and < 300;
@@ -180,7 +180,7 @@ public sealed class TShockClient : ITShockClient
                 $"TShock returned HTTP {statusCode} ({reasonPhrase}) with a body that is not valid JSON: {Sanitize(payload)}");
 
             return isSuccess
-                ? TShockResult.TransportError("invalid_response", detail, statusCode)
+                ? TShockResult.TransportError(ErrorCodes.InvalidResponse, detail, statusCode)
                 : TShockResult.RestError(statusCode, detail);
         }
 
@@ -230,16 +230,16 @@ public sealed class TShockClient : ITShockClient
         if (exception is OperationCanceledException)
         {
             return cancellationToken.IsCancellationRequested
-                ? TShockResult.TransportError("cancelled", "The TShock call was cancelled by the caller.")
+                ? TShockResult.TransportError(ErrorCodes.Cancelled, "The TShock call was cancelled by the caller.")
                 : TShockResult.TransportError(
-                    "timeout",
+                    ErrorCodes.Timeout,
                     $"TShock did not respond within {_options.Timeout.TotalSeconds:0} seconds.");
         }
 
         if (exception is HttpRequestException)
         {
             return TShockResult.TransportError(
-                "network_error",
+                ErrorCodes.NetworkError,
                 HttpPayload.Truncate(NetworkErrorPrefix + Sanitize(exception.Message)));
         }
 
@@ -250,7 +250,7 @@ public sealed class TShockClient : ITShockClient
             exception.GetType().Name,
             HttpPayload.Truncate(Sanitize(exception.Message)));
 
-        return TShockResult.TransportError("unexpected_error", exception.GetType().Name);
+        return TShockResult.TransportError(ErrorCodes.UnexpectedError, exception.GetType().Name);
     }
 
     /// <summary>

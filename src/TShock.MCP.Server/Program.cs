@@ -116,10 +116,10 @@ internal static class CallToolErrors
         request.MatchedPrimitive?.Id ?? "unknown";
 
     internal static CallToolResult InvalidArguments(string toolName) =>
-        Build("invalid_argument", $"Invalid arguments for tool '{toolName}'.");
+        Build(ErrorCodes.InvalidArgument, $"Invalid arguments for tool '{toolName}'.");
 
     internal static CallToolResult Unexpected() =>
-        Build("unexpected_error", "The tool failed with an unexpected error.");
+        Build(ErrorCodes.UnexpectedError, "The tool failed with an unexpected error.");
 
     internal static void LogUnexpected(RequestContext<CallToolRequestParams> request, Exception exception)
     {

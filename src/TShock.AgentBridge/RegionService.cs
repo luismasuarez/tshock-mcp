@@ -63,17 +63,17 @@ internal sealed class RegionService
         var name = request.Name?.Trim();
         if (string.IsNullOrEmpty(name))
         {
-            return (null, "name_required");
+            return (null, WireCodes.NameRequired);
         }
 
         if (request.Width <= 0 || request.Height <= 0)
         {
-            return (null, "invalid_size");
+            return (null, WireCodes.InvalidSize);
         }
 
         if (request.X < 0 || request.Y < 0)
         {
-            return (null, "invalid_position");
+            return (null, WireCodes.InvalidPosition);
         }
 
         // The admin decides who may own a region: the bridge never invents an
@@ -81,7 +81,7 @@ internal sealed class RegionService
         var owner = string.IsNullOrWhiteSpace(request.Owner) ? _owners.DefaultOwner : request.Owner.Trim();
         if (!_owners.IsAllowed(owner))
         {
-            return (null, "owner_not_allowed");
+            return (null, WireCodes.OwnerNotAllowed);
         }
 
         return await _dispatcher.InvokeAsync(() =>
@@ -89,19 +89,19 @@ internal sealed class RegionService
             // Bounds are only known on the game thread.
             if (request.X + request.Width > Main.maxTilesX || request.Y + request.Height > Main.maxTilesY)
             {
-                return ((RegionDto?)null, (string?)"out_of_bounds");
+                return ((RegionDto?)null, (string?)WireCodes.OutOfBounds);
             }
 
             if (TShockAPI.TShock.Regions.GetRegionByName(name) is not null)
             {
-                return (null, "region_exists");
+                return (null, WireCodes.RegionExists);
             }
 
             var worldId = Main.worldID.ToString();
             if (!TShockAPI.TShock.Regions.AddRegion(
                     request.X, request.Y, request.Width, request.Height, name, owner, worldId))
             {
-                return (null, "create_failed");
+                return (null, WireCodes.CreateFailed);
             }
 
             var created = TShockAPI.TShock.Regions.GetRegionByName(name);
@@ -114,17 +114,17 @@ internal sealed class RegionService
         {
             if (string.IsNullOrWhiteSpace(name))
             {
-                return (false, (string?)"name_required");
+                return (false, (string?)WireCodes.NameRequired);
             }
 
             if (TShockAPI.TShock.Regions.GetRegionByName(name) is null)
             {
-                return (false, (string?)"region_not_found");
+                return (false, (string?)WireCodes.RegionNotFound);
             }
 
             return TShockAPI.TShock.Regions.DeleteRegion(name)
                 ? (true, (string?)null)
-                : (false, (string?)"delete_failed");
+                : (false, (string?)WireCodes.DeleteFailed);
         });
 
     private static RegionDto ToDto(TShockAPI.DB.Region region) =>

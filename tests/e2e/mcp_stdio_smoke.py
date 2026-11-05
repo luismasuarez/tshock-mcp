@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import re
 import subprocess
 import sys
 import threading
@@ -390,16 +391,50 @@ def check(condition: bool, message: str) -> None:
     print(f"ok: {message}")
 
 
+def load_public_error_codes() -> set[str]:
+    """Reads the canonical public set from the architecture table."""
+    text = (REPO_ROOT / "docs" / "architecture.md").read_text(encoding="utf-8")
+    begin = "<!-- BEGIN ERROR CODES -->"
+    end = "<!-- END ERROR CODES -->"
+    block = text.split(begin, 1)[1].split(end, 1)[0]
+    return set(re.findall(r"^\|\s*`([a-z0-9_]+)`", block, flags=re.MULTILINE))
+
+
+def iter_error_codes(value: object):
+    if isinstance(value, dict):
+        error = value.get("error")
+        if isinstance(error, dict) and isinstance(error.get("code"), str):
+            yield error["code"]
+        for item in value.values():
+            yield from iter_error_codes(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from iter_error_codes(item)
+
+
+def check_known_error_codes(results: dict, known: set[str]) -> None:
+    """No tool may return a code outside the documented public set."""
+    observed = set(iter_error_codes(results))
+    unknown = sorted(observed - known)
+    check(not unknown, "every error code belongs to the canonical table" +
+          (f" (unknown: {unknown})" if unknown else ""))
+
+
 def main() -> int:
     if not DEFAULT_DLL.exists():
         print(f"Binary not found: {DEFAULT_DLL}\nRun: dotnet build -c Release", file=sys.stderr)
         return 2
+
+    known_codes = load_public_error_codes()
+    check("invalid_argument" in known_codes and "bridge_error" in known_codes,
+          "the canonical error table is readable")
 
     server = HTTPServer(("127.0.0.1", 0), Handler)
     port = server.server_address[1]
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
         results, stderr = run(port, allow_write=True)
+        check_known_error_codes(results, known_codes)
         check(results["status"]["ok"] and results["status"]["data"]["name"] == "E2E",
               "server_status returns the parsed TShock body")
         check(results["status"]["data"]["serverversion"] == "1.4.4.9",
@@ -451,12 +486,14 @@ def main() -> int:
 
         before = len(seen)
         results, _ = run(port, allow_write=False)
+        check_known_error_codes(results, known_codes)
         check(results["kick"]["ok"] is False and results["kick"]["error"]["code"] == "write_disabled",
               "kick_player is blocked when writes are disabled")
         check(not any(path == "/v2/players/kick" for path, _ in seen[before:]),
               "blocked write never reaches TShock")
 
         results, _ = run(port, allow_write=False, token="wrong")
+        check_known_error_codes(results, known_codes)
         check(results["status"]["ok"] is False and results["status"]["error"]["httpStatus"] == 403,
               "invalid token maps to a 403 rest_error")
         check("invalid token" in results["status"]["error"]["message"],
@@ -469,6 +506,7 @@ def main() -> int:
         try:
             before = len(bridge_seen)
             results, stderr = run(port, allow_write=False, bridge=(bridge_url, BRIDGE_TOKEN))
+            check_known_error_codes(results, known_codes)
 
             check(len(results["events"]["data"]["events"]) == 2,
                   "events_since returns the retained backlog")
@@ -520,6 +558,7 @@ def main() -> int:
             before = len(bridge_seen)
             results, stderr = run(
                 port, allow_write=True, bridge=(bridge_url, BRIDGE_TOKEN), write_scenario=True)
+            check_known_error_codes(results, known_codes)
 
             check(results["region_create"]["ok"] is True and
                   results["region_create"]["data"]["owner"] == "mcp-gateway",
@@ -547,6 +586,7 @@ def main() -> int:
             # the operator instead of trusting a boolean from the model.
             results, _ = run(
                 port, allow_write=True, bridge=(bridge_url, BRIDGE_TOKEN), elicit="decline")
+            check_known_error_codes(results, known_codes)
             check(results["region_delete_elicit"]["error"]["code"] == "confirmation_declined",
                   "a declined elicitation cancels the deletion")
             check(any(region["name"] == "parcela"
@@ -555,6 +595,7 @@ def main() -> int:
 
             results, stderr = run(
                 port, allow_write=True, bridge=(bridge_url, BRIDGE_TOKEN), elicit="accept")
+            check_known_error_codes(results, known_codes)
             check(results["region_delete_elicit"]["ok"] is True and
                   results["region_delete_elicit"]["data"]["deleted"] is True,
                   "an accepted elicitation deletes the region")
@@ -567,6 +608,7 @@ def main() -> int:
             bridge_server.server_close()
 
             results, _ = run(port, allow_write=False, bridge=(bridge_url, BRIDGE_TOKEN))
+            check_known_error_codes(results, known_codes)
             check(results["events"]["error"]["code"] == "bridge_unavailable",
                   "a stopped bridge maps to bridge_unavailable")
             check(results["status"]["ok"] is True,

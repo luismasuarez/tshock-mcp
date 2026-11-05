@@ -30,7 +30,7 @@ public sealed record TShockResult(
         new(true, statusCode, body, null, null);
 
     public static TShockResult RestError(int statusCode, string message) =>
-        new(false, statusCode, null, "rest_error", message);
+        new(false, statusCode, null, ErrorCodes.RestError, message);
 
     public static TShockResult TransportError(string code, string message, int statusCode = 0) =>
         new(false, statusCode, null, code, message);

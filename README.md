@@ -314,7 +314,8 @@ Toda herramienta devuelve una cadena JSON con un sobre estable:
 Los argumentos se validan antes de cualquier petición: si faltan, llegan vacíos o tienen un tipo
 incorrecto, la herramienta devuelve `invalid_argument` sin contactar a TShock. Por separado, las
 herramientas de escritura devuelven `write_disabled` cuando `TSHOCK_MCP_ALLOW_WRITE` es `false`,
-también sin tráfico de red.
+también sin tráfico de red. La lista completa y canónica de códigos está en
+[docs/architecture.md](docs/architecture.md#mapeo-de-errores).
 
 ## Seguridad en resumen
 
@@ -359,6 +360,9 @@ Cubre las 18 tools REST y las 5 herramientas del puente, incluida la elicitation
 y la definición de terminado están en [docs/testing.md](docs/testing.md).
 
 ## Solución de problemas
+
+Los códigos de esta tabla son un subconjunto de la
+[tabla canónica](docs/architecture.md#mapeo-de-errores).
 
 | Síntoma | Causa probable | Solución |
 | --- | --- | --- |

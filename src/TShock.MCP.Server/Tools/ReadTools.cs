@@ -11,8 +11,6 @@ namespace TShock.McpServer.Tools;
 [McpServerToolType]
 public sealed class ReadTools(ITShockClient client)
 {
-    private const string InvalidArgumentCode = "invalid_argument";
-
     [McpServerTool(
         Name = "server_status",
         ReadOnly = true,
@@ -120,7 +118,7 @@ public sealed class ReadTools(ITShockClient client)
         if (lookupType is not ("name" or "id"))
         {
             return Task.FromResult(ToolResults.Error(
-                InvalidArgumentCode,
+                ErrorCodes.InvalidArgument,
                 "'type' must be 'name' or 'id'."));
         }
 
@@ -186,7 +184,7 @@ public sealed class ReadTools(ITShockClient client)
         CancellationToken cancellationToken = default) =>
         ticketNumber <= 0
             ? Task.FromResult(ToolResults.Error(
-                InvalidArgumentCode,
+                ErrorCodes.InvalidArgument,
                 "'ticketNumber' must be greater than zero."))
             : CallAsync(
                 "ban_info",
@@ -201,7 +199,7 @@ public sealed class ReadTools(ITShockClient client)
     /// </summary>
     private static string? RequireText(string? value, string parameterName) =>
         string.IsNullOrWhiteSpace(value)
-            ? ToolResults.Error(InvalidArgumentCode, $"'{parameterName}' must not be empty.")
+            ? ToolResults.Error(ErrorCodes.InvalidArgument, $"'{parameterName}' must not be empty.")
             : null;
 
     private async Task<string> CallAsync(

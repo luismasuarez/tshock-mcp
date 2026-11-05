@@ -72,14 +72,14 @@ public sealed class BridgeClient : IBridgeClient
         BridgeResult result;
         if (_options.Bridge is not { } bridge)
         {
-            result = BridgeResult.Failure("bridge_unavailable", NotConfiguredMessage);
+            result = BridgeResult.Failure(ErrorCodes.BridgeUnavailable, NotConfiguredMessage);
         }
         else if (path.IndexOf('?', StringComparison.Ordinal) >= 0)
         {
             // Same rule as the REST client: a caller must not smuggle a query in
             // the path, where it would bypass encoding.
             result = BridgeResult.Failure(
-                "unexpected_error",
+                ErrorCodes.UnexpectedError,
                 "The bridge client rejected a path that contains an inline query string.");
         }
         else
@@ -186,7 +186,7 @@ public sealed class BridgeClient : IBridgeClient
             contentLength > HttpPayload.MaxResponseBytes)
         {
             return BridgeResult.Failure(
-                "response_too_large",
+                ErrorCodes.ResponseTooLarge,
                 "The bridge response exceeded the 5 MB limit.",
                 statusCode);
         }
@@ -195,7 +195,7 @@ public sealed class BridgeClient : IBridgeClient
         if (body is null)
         {
             return BridgeResult.Failure(
-                "response_too_large",
+                ErrorCodes.ResponseTooLarge,
                 "The bridge response exceeded the 5 MB limit.",
                 statusCode);
         }
@@ -212,7 +212,7 @@ public sealed class BridgeClient : IBridgeClient
             catch (Exception ex) when (ex is JsonException or ArgumentException)
             {
                 return BridgeResult.Failure(
-                    "invalid_response",
+                    ErrorCodes.InvalidResponse,
                     $"The bridge returned HTTP {statusCode} with a body that is not valid JSON.",
                     statusCode);
             }
@@ -229,14 +229,14 @@ public sealed class BridgeClient : IBridgeClient
         if (statusCode == (int)HttpStatusCode.Unauthorized)
         {
             return BridgeResult.Failure(
-                "bridge_auth_error",
+                ErrorCodes.BridgeAuthError,
                 $"The bridge rejected the request with HTTP {statusCode}. Check TSHOCK_BRIDGE_TOKEN.",
                 statusCode);
         }
 
         if (statusCode is < 200 or >= 300)
         {
-            return BridgeResult.Failure("bridge_error", DescribeError(statusCode, node), statusCode)
+            return BridgeResult.Failure(ErrorCodes.BridgeError, DescribeError(statusCode, node), statusCode)
                 with
                 { BridgeError = ReadBridgeError(node) };
         }
@@ -247,7 +247,7 @@ public sealed class BridgeClient : IBridgeClient
             return statusCode == (int)HttpStatusCode.NoContent
                 ? BridgeResult.Success(statusCode, null)
                 : BridgeResult.Failure(
-                    "invalid_response",
+                    ErrorCodes.InvalidResponse,
                     $"The bridge returned HTTP {statusCode} with an empty body.",
                     statusCode);
         }
@@ -278,7 +278,7 @@ public sealed class BridgeClient : IBridgeClient
             : $"The event cursor is no longer available (reason: {reason ?? "unknown"}). " +
               $"Resume from cursor {resumeCursor}.";
 
-        return BridgeResult.Failure("cursor_expired", message, (int)HttpStatusCode.Gone, details);
+        return BridgeResult.Failure(ErrorCodes.CursorExpired, message, (int)HttpStatusCode.Gone, details);
     }
 
     private static string DescribeError(int statusCode, JsonNode? node)
@@ -304,16 +304,16 @@ public sealed class BridgeClient : IBridgeClient
             // Distinguish a caller cancellation from an HttpClient timeout: both
             // surface as TaskCanceledException.
             return cancellationToken.IsCancellationRequested
-                ? BridgeResult.Failure("cancelled", "The bridge call was cancelled by the caller.")
+                ? BridgeResult.Failure(ErrorCodes.Cancelled, "The bridge call was cancelled by the caller.")
                 : BridgeResult.Failure(
-                    "bridge_timeout",
+                    ErrorCodes.BridgeTimeout,
                     $"The bridge did not respond within {_options.Bridge?.Timeout.TotalSeconds ?? 0:0} seconds.");
         }
 
         if (exception is HttpRequestException)
         {
             return BridgeResult.Failure(
-                "bridge_unavailable",
+                ErrorCodes.BridgeUnavailable,
                 HttpPayload.Truncate(UnreachablePrefix + Sanitize(exception.Message)));
         }
 
@@ -322,7 +322,7 @@ public sealed class BridgeClient : IBridgeClient
             exception.GetType().Name,
             HttpPayload.Truncate(Sanitize(exception.Message)));
 
-        return BridgeResult.Failure("unexpected_error", exception.GetType().Name);
+        return BridgeResult.Failure(ErrorCodes.UnexpectedError, exception.GetType().Name);
     }
 
     /// <summary>
