@@ -444,11 +444,12 @@ Estrategia: un fork de TShock solo para ramas de PR (`feat/rest-v4-commands`,
 1. `AGENTS.md` — invariantes, definición de terminado y reglas para agentes.
 2. `README.md` — uso y estado de cara al usuario.
 3. `docs/roadmap.md` — este documento: estado por capa, decisiones y plan real.
-4. `docs/testing.md` — capas de prueba y qué se considera aceptación.
-5. `docs/architecture.md` — diseño de la Fase 0 y capas actuales.
-6. `docs/bridge.md` — contrato HTTP del plugin de Fase 1.
-7. `docs/security.md` — modelo de amenazas.
-8. `docs/local-testing.md` — guía para levantar TShock y probar.
+4. `docs/backlog.md` — mejoras priorizadas, una por sesión.
+5. `docs/testing.md` — capas de prueba y qué se considera aceptación.
+6. `docs/architecture.md` — diseño de la Fase 0 y capas actuales.
+7. `docs/bridge.md` — contrato HTTP del plugin de Fase 1.
+8. `docs/security.md` — modelo de amenazas.
+9. `docs/local-testing.md` — guía para levantar TShock y probar.
 
 ### Comandos
 
