@@ -25,7 +25,12 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
     /// <summary>Bounds an argument that ends up in a URL path segment.</summary>
     internal const int MaxRegionNameLength = 128;
 
-    [McpServerTool(Name = "events_since", ReadOnly = true)]
+    [McpServerTool(
+        Name = "events_since",
+        ReadOnly = true,
+        Destructive = false,
+        Idempotent = true,
+        OpenWorld = false)]
     [Description(
         "Returns server events published after an exclusive cursor: player joins and leaves, chat, " +
         "commands, deaths, boss kills and region changes. Keep the returned cursor and pass it as " +
@@ -67,7 +72,12 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
         return CallAsync("events_since", "/v1/events", query, cancellationToken);
     }
 
-    [McpServerTool(Name = "regions_list", ReadOnly = true)]
+    [McpServerTool(
+        Name = "regions_list",
+        ReadOnly = true,
+        Destructive = false,
+        Idempotent = true,
+        OpenWorld = false)]
     [Description(
         "Lists the regions of the current world with their name, area, owner, protection flags and " +
         "allowed users and groups. Regions are a bridge feature, so this tool answers " +
@@ -75,7 +85,12 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
     public Task<string> RegionsList(CancellationToken cancellationToken = default) =>
         CallAsync("regions_list", "/v1/regions", null, cancellationToken);
 
-    [McpServerTool(Name = "region_info", ReadOnly = true)]
+    [McpServerTool(
+        Name = "region_info",
+        ReadOnly = true,
+        Destructive = false,
+        Idempotent = true,
+        OpenWorld = false)]
     [Description(
         "Returns one region by its exact name: area, owner, whether building is disabled and which " +
         "users and groups are allowed. Returns region_not_found when the name does not exist.")]
@@ -98,6 +113,7 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
 
     [McpServerTool(
         Name = "region_create",
+        ReadOnly = false,
         Destructive = false,
         Idempotent = false,
         OpenWorld = false)]
@@ -165,6 +181,7 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
 
     [McpServerTool(
         Name = "region_delete",
+        ReadOnly = false,
         Destructive = true,
         Idempotent = false,
         OpenWorld = false)]

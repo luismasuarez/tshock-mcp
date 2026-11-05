@@ -430,6 +430,22 @@ def main() -> int:
               "events_since is registered without a configured bridge")
         check(results["tools"]["events_since"]["annotations"]["readOnlyHint"] is True,
               "events_since is annotated as read-only")
+        check(len(results["tools"]) == 23, "tools/list exposes the 23 documented tools")
+
+        # Clients must not need the SDK defaults: every tool declares the four hints
+        # as real booleans, which is also what the OpenAI directory requires.
+        four_hints = ("readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint")
+        missing_hints = [
+            f"{name}:{hint}"
+            for name, tool in results["tools"].items()
+            for hint in four_hints
+            if not isinstance((tool.get("annotations") or {}).get(hint), bool)
+        ]
+        check(not missing_hints,
+              "every tool declares all four annotation hints" +
+              (f" (missing: {missing_hints})" if missing_hints else ""))
+        check(results["tools"]["broadcast"]["annotations"]["readOnlyHint"] is False,
+              "write tools explicitly declare readOnlyHint false")
         check(results["events"]["error"]["code"] == "bridge_unavailable",
               "events_since reports bridge_unavailable when unconfigured")
 

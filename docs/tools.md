@@ -5,8 +5,9 @@ ejecutan como peticiones `GET` contra la API REST de TShock, que usa ese método
 mutaciones.
 
 La Fase 1 agrega de forma aditiva **herramientas del puente** que hablan con el plugin
-`TShock.AgentBridge` por HTTP en loopback. Hoy existe una, `events_since`, así que el catálogo total
-es de **23 herramientas**. Las 18 de la Fase 0 conservan su nombre, sus rutas y su semántica.
+`TShock.AgentBridge` por HTTP en loopback. Hoy existen cinco: `events_since`, `regions_list`,
+`region_info`, `region_create` y `region_delete`, así que el catálogo total es de
+**23 herramientas**. Las 18 de la Fase 0 conservan su nombre, sus rutas y su semántica.
 
 Convenciones de la tabla:
 
@@ -17,6 +18,43 @@ Convenciones de la tabla:
   devuelven `write_disabled` sin llegar a TShock.
 - **Argumentos**: faltante, vacío (cadena vacía o solo espacios) o de tipo incorrecto produce
   `invalid_argument` sin ninguna petición HTTP. El cliente nunca completa ni adivina valores.
+
+## Anotaciones MCP
+
+Cada herramienta declara los cuatro hints de `annotations` con un booleano explícito. No se deja
+ninguno en el valor por defecto del SDK (`destructiveHint` y `openWorldHint` serían `true`, lo que
+describiría mal las herramientas de lectura) y el directorio de OpenAI rechaza las herramientas a
+las que les falta uno.
+
+- `readOnlyHint`: la herramienta no muta estado.
+- `destructiveHint`: puede destruir o quitar algo de forma difícil de revertir. Solo es relevante
+  cuando `readOnlyHint` es `false`, pero se declara siempre.
+- `idempotentHint`: repetir la llamada con los mismos argumentos no produce efecto adicional.
+- `openWorldHint`: el dominio es abierto e impredecible. Es `false` en todo el catálogo porque el
+  alcance es un servidor TShock concreto, con jugadores, cuentas y regiones que el servidor conoce.
+
+Las 15 herramientas de lectura comparten la misma combinación: `readOnlyHint: true`,
+`destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false`.
+
+Las de escritura:
+
+| Herramienta | `readOnlyHint` | `destructiveHint` | `idempotentHint` | `openWorldHint` |
+| --- | --- | --- | --- | --- |
+| `broadcast` | `false` | `false` | `false` | `false` |
+| `kick_player` | `false` | `true` | `false` | `false` |
+| `kill_player` | `false` | `true` | `false` | `false` |
+| `mute_player` | `false` | `true` | `false` | `false` |
+| `save_world` | `false` | `false` | `true` | `false` |
+| `reload_config` | `false` | `false` | `true` | `false` |
+| `region_create` | `false` | `false` | `false` | `false` |
+| `region_delete` | `false` | `true` | `false` | `false` |
+
+`idempotentHint` se mantiene en `false` para las operaciones destructivas aunque repetirlas no
+cambie el estado final: el hint también guía los reintentos automáticos y conviene que un agente no
+repita un borrado o una expulsión tras un timeout.
+
+Los valores se verifican en `tests/TShock.MCP.Server.Tests/ToolAnnotationTests.cs` y en la prueba
+MCP por stdio.
 
 ## Herramientas de lectura (siempre disponibles)
 
