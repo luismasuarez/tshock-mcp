@@ -247,6 +247,9 @@ Las rutas de regiones ejecutan toda la lógica en el hilo del juego a través de
 - `DELETE /v1/regions/{name}` comprueba primero que la región exista, porque
   `RegionManager.DeleteRegion` devuelve `true` aunque no haya fila. Responde `204` sin cuerpo cuando
   borra y `404` (`region_not_found`) cuando no existe.
+- El gateway valida el nombre y el propietario antes de la red: máximo 128 code points y sin
+  caracteres de control ni formato invisible; el nombre tampoco puede contener `/`. Un valor
+  inválido devuelve `invalid_argument` y nunca llega al puente.
 
 ### Política de propietario
 

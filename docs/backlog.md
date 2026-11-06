@@ -29,7 +29,7 @@ Reglas que ninguna entrada puede romper:
 | # | Mejora | Prioridad | Esfuerzo | Depende de | Estado |
 | --- | --- | --- | --- | --- | --- |
 | P1-09 | Taxonomía única de códigos de error | P1 | 1 sesión | — | Hecho |
-| P0-02 | Límites de longitud en argumentos | P0 | 1 sesión | — | Pendiente |
+| P0-02 | Límites y política de argumentos de texto | P0 | 1 sesión | — | Hecho |
 | P0-06 | `title` en las 23 tools | P0 | 1 sesión | — | Pendiente |
 | P2-15 | Snapshot del contrato de `tools/list` | P2 | 1 sesión | P0-06 | Pendiente |
 | P0-03 | Rate limiting por tool | P0 | 1 sesión | P1-09 | Pendiente |
@@ -78,17 +78,47 @@ Reglas que ninguna entrada puede romper:
   - El snapshot del contrato se actualiza y la suite sigue verde.
 - **Riesgo:** tocar el sobre. Cualquier cambio debe ser aditivo; el texto no cambia.
 
-### P0-02 · Límites de longitud en argumentos
+### P0-02 · Límites y política de argumentos de texto
 
 - **Prioridad:** P0 · **Esfuerzo:** 1 sesión · **Depende de:** —
-- **Problema:** `broadcast.message`, `kick_player.reason` y `kill_player.from` solo se validan como
-  no vacíos. Un modelo puede enviar megabytes al chat, al log de auditoría o a TShock.
+- **Problema:** el agujero no son tres campos, es una clase: todo `string` que entra por una tool y
+  termina en el chat, en la URL de TShock, en el log/auditoría o en el contexto del modelo. Hoy
+  `RequireText` solo rechazaba vacío; `player`, `user`, `group`, `message`, `reason` y `from` no
+  tenían cota; `region`/`owner` tenían un 128 local y sin política común. Un modelo podía enviar
+  megabytes, CRLF/ANSI, bidi o zero-width: inundar el chat, inflar el contexto, forjar líneas de log
+  o hacer que TShock devolviera el texto en un `rest_error`. El SDK 2.3.0 documenta que las
+  anotaciones de datos decoran el `inputSchema` pero **no** se validan en runtime; `tools/list` no
+  publicaba `maxLength`.
+- **Evidencia:** `tools/list` del binario anterior: `broadcast.message`, `kick_player.reason` y
+  `kill_player.from` eran `{"type":"string"}` sin `maxLength`. `WriteTools.RequireText` y
+  `ReadTools.RequireText` solo comprobaban `IsNullOrWhiteSpace`; `BridgeTools.RequireRegionName`
+  repetía la comprobación con 128 local.
 - **Cambios:**
-  - Extender el helper de validación a `RequireText(value, name, maxLength)`.
-  - Límites propuestos: `broadcast.message` 256, `reason` 200, `from` 200. `region` ya limita a 128.
-  - Reutilizar el mismo helper en las tools REST y del puente.
-- **Aceptación:** valor por encima del límite devuelve `invalid_argument` antes de la red; pruebas
-  unitarias por tool y un check en la e2e.
+  - Un solo validador en `Tools/ToolSupport.cs`: `RequireText(value, name, maxLength)` con conteo de
+    **code points Unicode** (semántica de `maxLength` en JSON Schema), no `string.Length` (unidades
+    UTF-16), y rechazo de caracteres de control/formato (C0/C1, DEL, bidi, zero-width, U+2028/2029;
+    se conservan ZWNJ y ZWJ). `RequireRegionName` delega y añade la regla de `/`.
+  - Tabla única `ArgumentLimits` con constantes `const int`: `broadcast.message` 256,
+    `kick_player.reason` 200, `kill_player.from` 64 (nombre de jugador, alineado con
+    `EventText.PlayerNameMax` del puente), `player` 64, `user`/`group` 64, `type` 16,
+    `region.name`/`owner` 128. Sin variables de entorno: los límites son contrato, no configuración.
+  - `[MaxLength(ArgumentLimits.X)]` en cada parámetro para que `inputSchema` publique `maxLength`;
+    el runtime sigue siendo la autoridad porque el SDK no aplica la anotación.
+  - Se mantiene la precedencia actual: `write_disabled` antes de validar; el sobre y
+    `invalid_argument` no cambian; el mensaje de error no repite el valor recibido.
+  - Test de inventario por reflexión: todo parámetro `string` de una `[McpServerTool]` debe tener
+    `[MaxLength]` y un límite en la tabla; una tool nueva sin límite rompe la suite.
+  - Documentado en `docs/tools.md`, `docs/architecture.md`, `docs/security.md`, `docs/testing.md` y
+    `README.md`.
+- **Aceptación:** para cada campo, `max-1`, `max`, `max+1`, vacío, CRLF, NUL, ANSI, bidi y zero-width
+  devuelven `invalid_argument` antes de cualquier petición; `max` llega intacto al upstream. El
+  conteo es por code points (`max` emoji se acepta y `max+1` se rechaza). `tools/list` publica
+  `maxLength`. La e2e comprueba el rechazo, que el contador de peticiones del TShock/puente falso no
+  crece, que el payload no aparece en `stderr` y que el token sigue ausente. El test de reflexión
+  falla si se agrega un `string` sin límite.
+- **Riesgo:** endurecer el contrato es observable; los límites son holgados y se documentan. La
+  validación de la tool ocurre después de parsear el JSON-RPC: un tope real de megabytes pertenece
+  al transporte y queda como riesgo residual documentado, no como parte de esta entrada.
 
 ### P0-03 · Rate limiting por tool
 
@@ -391,3 +421,4 @@ Al terminar:
 | --- | --- | --- | --- |
 | 2026-11-05 | Creación del backlog | — | Revisión contra spec 2026-07-28, security best practices, SDK 2.3.0 y GitHub MCP Server. |
 | 2026-11-05 | P1-09 · Taxonomía única de códigos de error | — | Commit único; 20 códigos públicos y 17 wire codes centralizados, tablas canónicas y pruebas bidireccionales. |
+| 2026-11-05 | P0-02 · Límites y política de argumentos de texto | — | Commit único; code points, control/formato, `maxLength` en `inputSchema`, guard de reflexión y e2e con contador de peticiones. |

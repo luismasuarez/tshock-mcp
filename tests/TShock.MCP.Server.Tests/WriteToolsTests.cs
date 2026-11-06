@@ -303,4 +303,125 @@ public sealed class WriteToolsTests
         var call = Assert.Single(client.Calls);
         Assert.Null(call.Query!["from"]);
     }
+
+    [Fact]
+    public async Task Broadcast_AcceptsMessageAtTheLimit()
+    {
+        var (tools, client) = Arrange(allowWrite: true);
+        var message = new string('a', 256);
+
+        var output = await tools.Broadcast(message);
+
+        Assert.Equal(message, Assert.Single(client.Calls).Query!["msg"]);
+        AssertEnvelope(output, "broadcast");
+    }
+
+    [Fact]
+    public async Task Broadcast_RejectsMessageOverTheLimit()
+    {
+        var (tools, client) = Arrange(allowWrite: true);
+
+        var output = await tools.Broadcast(new string('a', 257));
+
+        AssertInvalidArgument(output, "message");
+        Assert.Contains("256", ParseEnvelope(output)["error"]!["message"]!.GetValue<string>());
+        Assert.Empty(client.Calls);
+    }
+
+    [Fact]
+    public async Task Broadcast_RejectsControlCharacters()
+    {
+        var (tools, client) = Arrange(allowWrite: true);
+
+        var output = await tools.Broadcast("hello\nworld");
+
+        AssertInvalidArgument(output, "message");
+        Assert.Empty(client.Calls);
+    }
+
+    [Fact]
+    public async Task KickPlayer_AcceptsReasonAtTheLimit()
+    {
+        var (tools, client) = Arrange(allowWrite: true);
+        var reason = new string('r', 200);
+
+        await tools.KickPlayer("alice", reason);
+
+        Assert.Equal(reason, Assert.Single(client.Calls).Query!["reason"]);
+    }
+
+    [Fact]
+    public async Task KickPlayer_RejectsReasonOverTheLimit()
+    {
+        var (tools, client) = Arrange(allowWrite: true);
+
+        var output = await tools.KickPlayer("alice", new string('r', 201));
+
+        AssertInvalidArgument(output, "reason");
+        Assert.Empty(client.Calls);
+    }
+
+    [Fact]
+    public async Task KillPlayer_AcceptsSourceAtTheLimit()
+    {
+        var (tools, client) = Arrange(allowWrite: true);
+        var source = new string('s', 64);
+
+        await tools.KillPlayer("alice", source);
+
+        Assert.Equal(source, Assert.Single(client.Calls).Query!["from"]);
+    }
+
+    [Fact]
+    public async Task KillPlayer_RejectsSourceOverTheLimit()
+    {
+        var (tools, client) = Arrange(allowWrite: true);
+
+        var output = await tools.KillPlayer("alice", new string('s', 65));
+
+        AssertInvalidArgument(output, "from");
+        Assert.Empty(client.Calls);
+    }
+
+    [Fact]
+    public async Task PlayerTools_RejectOverlongPlayer()
+    {
+        var (tools, client) = Arrange(allowWrite: true);
+        var player = new string('p', 65);
+
+        var outputs = new[]
+        {
+            await tools.KickPlayer(player),
+            await tools.KillPlayer(player),
+            await tools.MutePlayer(player)
+        };
+
+        foreach (var output in outputs)
+        {
+            AssertInvalidArgument(output, "player");
+        }
+
+        Assert.Empty(client.Calls);
+    }
+
+    [Fact]
+    public async Task AllTools_PreferWriteDisabledOverOverlongArguments()
+    {
+        var (tools, client) = Arrange(allowWrite: false);
+
+        var outputs = new[]
+        {
+            await tools.Broadcast(new string('a', 257)),
+            await tools.KickPlayer("alice", new string('r', 201)),
+            await tools.KillPlayer("alice", new string('s', 65)),
+            await tools.MutePlayer(new string('p', 65))
+        };
+
+        foreach (var output in outputs)
+        {
+            AssertWriteDisabled(output);
+        }
+
+        Assert.Empty(client.Calls);
+    }
 }

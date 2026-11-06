@@ -311,11 +311,14 @@ Toda herramienta devuelve una cadena JSON con un sobre estable:
 {"ok":false,"error":{"code":"rest_error","message":"...","httpStatus":403}}
 ```
 
-Los argumentos se validan antes de cualquier petición: si faltan, llegan vacíos o tienen un tipo
-incorrecto, la herramienta devuelve `invalid_argument` sin contactar a TShock. Por separado, las
-herramientas de escritura devuelven `write_disabled` cuando `TSHOCK_MCP_ALLOW_WRITE` es `false`,
-también sin tráfico de red. La lista completa y canónica de códigos está en
-[docs/architecture.md](docs/architecture.md#mapeo-de-errores).
+Los argumentos se validan antes de cualquier petición: si faltan, llegan vacíos, tienen un tipo
+incorrecto, exceden su límite de code points o contienen caracteres de control o formato invisible,
+la herramienta devuelve `invalid_argument` sin contactar a TShock. Cada argumento de texto publica
+su `maxLength` en `inputSchema`; los límites están en
+[docs/tools.md](docs/tools.md#límites-de-argumentos-de-texto).
+Por separado, las herramientas de escritura devuelven `write_disabled` cuando
+`TSHOCK_MCP_ALLOW_WRITE` es `false`, también sin tráfico de red. La lista completa y canónica de
+códigos está en [docs/architecture.md](docs/architecture.md#mapeo-de-errores).
 
 ## Seguridad en resumen
 
@@ -337,7 +340,7 @@ Antes de habilitar escritura, revise [docs/security.md](docs/security.md).
 
 ## Pruebas
 
-Suite unitaria, sin red (212 pruebas: 181 del gateway y 31 del puente):
+Suite unitaria, sin red (288 pruebas: 243 del gateway y 45 del puente):
 
 ```bash
 dotnet test -c Release
@@ -353,7 +356,7 @@ python3 tests/e2e/mcp_stdio_smoke.py
 
 La prueba e2e requiere Python 3 y verifica el sobre de salida, la redacción de IP y credenciales, el
 bloqueo de escritura, el mapeo de un 403 de TShock, el cursor de `events_since` y la degradación a
-`bridge_unavailable` cuando el puente no responde (52 comprobaciones). Es multiplataforma: usa hilos
+`bridge_unavailable` cuando el puente no responde (78 comprobaciones). Es multiplataforma: usa hilos
 y una cola para leer la salida del proceso, sin depender de `select`.
 
 Cubre las 18 tools REST y las 5 herramientas del puente, incluida la elicitation. La matriz de capas

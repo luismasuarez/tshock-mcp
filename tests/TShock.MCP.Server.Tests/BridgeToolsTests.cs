@@ -434,4 +434,71 @@ public sealed class BridgeToolsTests
         Assert.Equal("bridge_unavailable", error["code"]!.GetValue<string>());
         Assert.False(error.ContainsKey("httpStatus"));
     }
+
+    [Fact]
+    public async Task RegionInfo_AcceptsNameAtTheLimit()
+    {
+        var (tools, client) = Arrange();
+        var name = new string('r', 128);
+
+        await tools.RegionInfo(name);
+
+        Assert.Equal($"/v1/regions/{name}", Assert.Single(client.Calls).Path);
+    }
+
+    [Fact]
+    public async Task RegionCreate_RejectsOverlongName()
+    {
+        var (tools, client) = Arrange();
+
+        var output = await tools.RegionCreate(new string('r', 129), 10, 10, 20, 20);
+
+        AssertInvalidArgument(output, "name");
+        Assert.Empty(client.Calls);
+    }
+
+    [Fact]
+    public async Task RegionCreate_AcceptsOwnerAtTheLimit()
+    {
+        var (tools, client) = Arrange();
+        var owner = new string('o', 128);
+
+        await tools.RegionCreate("arena", 10, 10, 20, 20, owner: owner);
+
+        Assert.Equal(owner, Assert.Single(client.Calls).Body!["owner"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task RegionCreate_RejectsOverlongOwner()
+    {
+        var (tools, client) = Arrange();
+
+        var output = await tools.RegionCreate(
+            "arena", 10, 10, 20, 20, owner: new string('o', 129));
+
+        AssertInvalidArgument(output, "owner");
+        Assert.Empty(client.Calls);
+    }
+
+    [Fact]
+    public async Task RegionCreate_RejectsControlCharactersInOwner()
+    {
+        var (tools, client) = Arrange();
+
+        var output = await tools.RegionCreate("arena", 10, 10, 20, 20, owner: "ali\nce");
+
+        AssertInvalidArgument(output, "owner");
+        Assert.Empty(client.Calls);
+    }
+
+    [Fact]
+    public async Task RegionDelete_RejectsOverlongName()
+    {
+        var (tools, client) = Arrange();
+
+        var output = await tools.RegionDelete(null!, null!, new string('r', 129), confirm: true);
+
+        AssertInvalidArgument(output, "name");
+        Assert.Empty(client.Calls);
+    }
 }

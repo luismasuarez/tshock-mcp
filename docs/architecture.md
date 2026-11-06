@@ -90,8 +90,9 @@ Ventajas concretas:
    stdin/stdout.
 2. El modelo invoca una herramienta, por ejemplo `player_info` con `player = "Alice"`.
 3. El SDK de MCP deserializa los argumentos y llama al método correspondiente.
-4. La herramienta valida el argumento. Si falta, llega vacío o tiene un tipo incorrecto, devuelve
-   `invalid_argument` sin tocar la red.
+4. La herramienta valida el argumento antes de la red: falta, vacío, tipo incorrecto, más largo que
+   su límite en code points o con caracteres de control produce `invalid_argument`. El límite se
+   publica además como `maxLength` en el `inputSchema`; la validación en runtime es la autoridad.
 5. Si es una herramienta de escritura y `TSHOCK_MCP_ALLOW_WRITE` es `false`, devuelve
    `write_disabled` sin tocar la red.
 6. `ITShockClient` compone la URL sobre `TSHOCK_REST_URL`, agrega `token` como parámetro de consulta
@@ -114,7 +115,7 @@ verifica contra `ErrorCodes.All` en `tests/TShock.MCP.Server.Tests/ErrorCodesTes
 <!-- BEGIN ERROR CODES -->
 | Código | Capa | Cuándo se produce | `httpStatus` | Acción sugerida |
 | --- | --- | --- | --- | --- |
-| `invalid_argument` | Validación | Falta un argumento obligatorio, llega vacío, tiene un tipo incorrecto o no pasa la validación local. No se hizo ninguna petición HTTP. | ausente | Corregir la llamada. |
+| `invalid_argument` | Validación | Falta un argumento obligatorio, llega vacío, tiene un tipo incorrecto o no pasa la validación local (por ejemplo, excede su límite de code points o contiene caracteres de control o formato invisible). No se hizo ninguna petición HTTP. | ausente | Corregir la llamada. |
 | `write_disabled` | Política | Se invocó una herramienta de escritura con `TSHOCK_MCP_ALLOW_WRITE` desactivado. | ausente | Habilitar la variable y reiniciar el anfitrión. |
 | `confirmation_required` | Política | `region_delete` necesita confirmación y el cliente no puede pedirla al operador, ni se envió `confirm: true`. | ausente | Pasar `confirm: true` o usar un cliente con elicitation. |
 | `confirmation_declined` | Política | El operador rechazó la confirmación de `region_delete`. | ausente | Ninguna; no se borró nada. |

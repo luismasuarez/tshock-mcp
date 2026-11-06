@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
 using ModelContextProtocol.Server;
 using TShock.McpServer.TShock;
 
@@ -21,7 +22,8 @@ public sealed class WriteTools(ITShockClient client, TShockOptions options)
         "Sends a message to every connected player. Requires TSHOCK_MCP_ALLOW_WRITE=true and the " +
         "tshock.rest.broadcast permission.")]
     public Task<string> Broadcast(
-        [Description("Message to show in-game. Keep it short and plain text.")] string message,
+        [Description("Message to show in-game. Keep it short and plain text. At most 256 characters.")]
+        [MaxLength(ArgumentLimits.BroadcastMessage)] string message,
         CancellationToken cancellationToken = default)
     {
         if (Disabled is { } disabled)
@@ -29,7 +31,7 @@ public sealed class WriteTools(ITShockClient client, TShockOptions options)
             return Task.FromResult(disabled);
         }
 
-        if (RequireText(message, "message") is { } invalidMessage)
+        if (ToolSupport.RequireText(message, "message", ArgumentLimits.BroadcastMessage) is { } invalidMessage)
         {
             return Task.FromResult(invalidMessage);
         }
@@ -51,8 +53,10 @@ public sealed class WriteTools(ITShockClient client, TShockOptions options)
         "Disconnects a player from the server. Requires TSHOCK_MCP_ALLOW_WRITE=true and the " +
         "tshock.rest.kick permission.")]
     public Task<string> KickPlayer(
-        [Description("Exact in-game player name (nickname).")] string player,
-        [Description("Optional reason shown to the player.")] string? reason = null,
+        [Description("Exact in-game player name (nickname). At most 64 characters.")]
+        [MaxLength(ArgumentLimits.PlayerName)] string player,
+        [Description("Optional reason shown to the player. At most 200 characters.")]
+        [MaxLength(ArgumentLimits.KickReason)] string? reason = null,
         CancellationToken cancellationToken = default)
     {
         if (Disabled is { } disabled)
@@ -60,9 +64,16 @@ public sealed class WriteTools(ITShockClient client, TShockOptions options)
             return Task.FromResult(disabled);
         }
 
-        if (RequireText(player, "player") is { } invalidPlayer)
+        if (ToolSupport.RequireText(player, "player", ArgumentLimits.PlayerName) is { } invalidPlayer)
         {
             return Task.FromResult(invalidPlayer);
+        }
+
+        var normalizedReason = ToolSupport.NormalizeOptional(reason);
+        if (normalizedReason is not null &&
+            ToolSupport.RequireText(normalizedReason, "reason", ArgumentLimits.KickReason) is { } invalidReason)
+        {
+            return Task.FromResult(invalidReason);
         }
 
         return CallAsync(
@@ -71,7 +82,7 @@ public sealed class WriteTools(ITShockClient client, TShockOptions options)
             new Dictionary<string, string?>
             {
                 ["player"] = player,
-                ["reason"] = NormalizeOptional(reason)
+                ["reason"] = normalizedReason
             },
             cancellationToken);
     }
@@ -86,8 +97,10 @@ public sealed class WriteTools(ITShockClient client, TShockOptions options)
         "Kills a player without kicking them. Requires TSHOCK_MCP_ALLOW_WRITE=true and the " +
         "tshock.rest.kill permission.")]
     public Task<string> KillPlayer(
-        [Description("Exact in-game player name (nickname).")] string player,
-        [Description("Optional name to attribute the kill to.")] string? from = null,
+        [Description("Exact in-game player name (nickname). At most 64 characters.")]
+        [MaxLength(ArgumentLimits.PlayerName)] string player,
+        [Description("Optional name to attribute the kill to. At most 64 characters.")]
+        [MaxLength(ArgumentLimits.KillSource)] string? from = null,
         CancellationToken cancellationToken = default)
     {
         if (Disabled is { } disabled)
@@ -95,9 +108,16 @@ public sealed class WriteTools(ITShockClient client, TShockOptions options)
             return Task.FromResult(disabled);
         }
 
-        if (RequireText(player, "player") is { } invalidPlayer)
+        if (ToolSupport.RequireText(player, "player", ArgumentLimits.PlayerName) is { } invalidPlayer)
         {
             return Task.FromResult(invalidPlayer);
+        }
+
+        var normalizedSource = ToolSupport.NormalizeOptional(from);
+        if (normalizedSource is not null &&
+            ToolSupport.RequireText(normalizedSource, "from", ArgumentLimits.KillSource) is { } invalidSource)
+        {
+            return Task.FromResult(invalidSource);
         }
 
         return CallAsync(
@@ -106,7 +126,7 @@ public sealed class WriteTools(ITShockClient client, TShockOptions options)
             new Dictionary<string, string?>
             {
                 ["player"] = player,
-                ["from"] = NormalizeOptional(from)
+                ["from"] = normalizedSource
             },
             cancellationToken);
     }
@@ -121,7 +141,8 @@ public sealed class WriteTools(ITShockClient client, TShockOptions options)
         "Mutes a player so their chat is not broadcast. Requires TSHOCK_MCP_ALLOW_WRITE=true and the " +
         "tshock.rest.mute permission.")]
     public Task<string> MutePlayer(
-        [Description("Exact in-game player name (nickname).")] string player,
+        [Description("Exact in-game player name (nickname). At most 64 characters.")]
+        [MaxLength(ArgumentLimits.PlayerName)] string player,
         CancellationToken cancellationToken = default)
     {
         if (Disabled is { } disabled)
@@ -129,7 +150,7 @@ public sealed class WriteTools(ITShockClient client, TShockOptions options)
             return Task.FromResult(disabled);
         }
 
-        if (RequireText(player, "player") is { } invalidPlayer)
+        if (ToolSupport.RequireText(player, "player", ArgumentLimits.PlayerName) is { } invalidPlayer)
         {
             return Task.FromResult(invalidPlayer);
         }
@@ -175,19 +196,6 @@ public sealed class WriteTools(ITShockClient client, TShockOptions options)
             : ToolResults.Error(
                 ErrorCodes.WriteDisabled,
                 "Write tools are disabled. Set TSHOCK_MCP_ALLOW_WRITE=true to enable them.");
-
-    /// <summary>
-    /// Returns the error envelope for a missing or blank text argument, or
-    /// <see langword="null"/> when the value is usable.
-    /// </summary>
-    private static string? RequireText(string? value, string parameterName) =>
-        string.IsNullOrWhiteSpace(value)
-            ? ToolResults.Error(ErrorCodes.InvalidArgument, $"'{parameterName}' must not be empty.")
-            : null;
-
-    /// <summary>Drops whitespace-only optional values so they are not sent to TShock.</summary>
-    private static string? NormalizeOptional(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? null : value;
 
     private async Task<string> CallAsync(
         string operation,

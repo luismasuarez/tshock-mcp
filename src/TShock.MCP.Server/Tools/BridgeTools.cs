@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using ModelContextProtocol.Protocol;
@@ -19,9 +20,6 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
 
     /// <summary>Matches the bridge contract: 500 events per page.</summary>
     internal const int MaxEventLimit = 500;
-
-    /// <summary>Bounds an argument that ends up in a URL path segment.</summary>
-    internal const int MaxRegionNameLength = 128;
 
     [McpServerTool(
         Name = "events_since",
@@ -93,10 +91,11 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
         "Returns one region by its exact name: area, owner, whether building is disabled and which " +
         "users and groups are allowed. Returns region_not_found when the name does not exist.")]
     public Task<string> RegionInfo(
-        [Description("Exact region name, for example 'spawn'.")] string name,
+        [Description("Exact region name, for example 'spawn'. At most 128 characters.")]
+        [MaxLength(ArgumentLimits.RegionName)] string name,
         CancellationToken cancellationToken = default)
     {
-        if (RequireRegionName(name) is { } invalidName)
+        if (ToolSupport.RequireRegionName(name) is { } invalidName)
         {
             return Task.FromResult(invalidName);
         }
@@ -120,12 +119,14 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
         "defaults to the server's configured bridge owner; any other owner must be allowed by the " +
         "server administrator, otherwise the tool returns owner_not_allowed.")]
     public async Task<string> RegionCreate(
-        [Description("Region name, unique in the world. No slashes.")] string name,
+        [Description("Region name, unique in the world. No slashes. At most 128 characters.")]
+        [MaxLength(ArgumentLimits.RegionName)] string name,
         [Description("Left tile column of the region, zero or greater.")] int x,
         [Description("Top tile row of the region, zero or greater.")] int y,
         [Description("Width in tiles, greater than zero.")] int width,
         [Description("Height in tiles, greater than zero.")] int height,
-        [Description("Optional region owner allowed by the server policy.")] string? owner = null,
+        [Description("Optional region owner allowed by the server policy. At most 128 characters.")]
+        [MaxLength(ArgumentLimits.RegionOwner)] string? owner = null,
         CancellationToken cancellationToken = default)
     {
         if (Disabled is { } disabled)
@@ -133,7 +134,7 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
             return disabled;
         }
 
-        if (RequireRegionName(name) is { } invalidName)
+        if (ToolSupport.RequireRegionName(name) is { } invalidName)
         {
             return invalidName;
         }
@@ -149,11 +150,9 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
         }
 
         if (owner is not null &&
-            (string.IsNullOrWhiteSpace(owner) || owner.Length > MaxRegionNameLength || owner.Any(char.IsControl)))
+            ToolSupport.RequireText(owner, "owner", ArgumentLimits.RegionOwner) is { } invalidOwner)
         {
-            return ToolResults.Error(
-                ErrorCodes.InvalidArgument,
-                "'owner' must be a non-empty name without control characters.");
+            return invalidOwner;
         }
 
         var body = new JsonObject
@@ -190,7 +189,8 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
     public async Task<string> RegionDelete(
         ModelContextProtocol.Server.McpServer server,
         RequestContext<CallToolRequestParams> context,
-        [Description("Exact region name to delete.")] string name,
+        [Description("Exact region name to delete. At most 128 characters.")]
+        [MaxLength(ArgumentLimits.RegionName)] string name,
         [Description(
             "Explicit confirmation for clients that cannot ask the operator. Ignored when " +
             "elicitation is available.")]
@@ -202,7 +202,7 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
             return disabled;
         }
 
-        if (RequireRegionName(name) is { } invalidName)
+        if (ToolSupport.RequireRegionName(name) is { } invalidName)
         {
             return invalidName;
         }
@@ -358,35 +358,6 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
                 400),
             _ => ToolResults.From(result)
         };
-    }
-
-    /// <summary>
-    /// Rejects names that cannot travel as a single URL path segment or that are
-    /// absurdly long. Validation runs before the network so a bad name never
-    /// reaches the bridge and can never be mistaken for a missing region.
-    /// </summary>
-    internal static string? RequireRegionName(string? name)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            return ToolResults.Error(ErrorCodes.InvalidArgument, "'name' must not be empty.");
-        }
-
-        if (name.Length > MaxRegionNameLength)
-        {
-            return ToolResults.Error(
-                ErrorCodes.InvalidArgument,
-                $"'name' must be at most {MaxRegionNameLength} characters.");
-        }
-
-        if (name.Contains('/') || name.Any(char.IsControl))
-        {
-            return ToolResults.Error(
-                ErrorCodes.InvalidArgument,
-                "'name' must not contain '/' or control characters.");
-        }
-
-        return null;
     }
 
     /// <summary>Null when writes are enabled, otherwise the stable refusal.</summary>

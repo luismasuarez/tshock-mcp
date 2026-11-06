@@ -50,6 +50,7 @@ en el servidor de juego. El modelo nunca ve el token ni habla directamente con T
 | Escucha pasiva del tráfico REST | Robo del token y de datos | Loopback por defecto; HTTPS obligatorio para hosts remotos; HTTP remoto rechazado salvo opción explícita. |
 | Fuga de IP de jugadores al modelo | Privacidad | Redacción a `<redacted>` salvo `TSHOCK_MCP_SHOW_IPS=true`. |
 | Respuestas enormes o lentas | Consumo de memoria o bloqueo | Timeout configurable y límite de tamaño con `response_too_large`. |
+| Argumentos enormes o con caracteres de control | Inundación del chat, inflado del contexto del modelo, inyección de líneas en logs | Límite por argumento en code points, rechazo de control/formato y validación antes de la red; el límite se publica como `maxLength` en `inputSchema`. |
 | Servidor TShock comprometido | Datos falsos hacia el modelo | El agente no ejecuta lo que lee; la escritura sigue limitada a 6 rutas. |
 | Dependencia NuGet comprometida | Ejecución de código en el host | Versiones fijadas, CI reproducible y revisión de actualizaciones. |
 | Fuga del token del puente | Crear o borrar regiones y leer eventos | Token propio, archivo con permisos `600`, sin TLS solo en loopback, nunca se registra y se compara en tiempo constante. |

@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
 using ModelContextProtocol.Server;
 using TShock.McpServer.TShock;
 
@@ -57,9 +58,10 @@ public sealed class ReadTools(ITShockClient client)
         "Returns detailed information for one connected player, including inventory, equipment, buffs, " +
         "group and mute state. The IP address is redacted unless TSHOCK_MCP_SHOW_IPS=true.")]
     public Task<string> PlayerInfo(
-        [Description("Exact in-game player name (nickname).")] string player,
+        [Description("Exact in-game player name (nickname). At most 64 characters.")]
+        [MaxLength(ArgumentLimits.PlayerName)] string player,
         CancellationToken cancellationToken = default) =>
-        RequireText(player, "player") is { } invalidPlayer
+        ToolSupport.RequireText(player, "player", ArgumentLimits.PlayerName) is { } invalidPlayer
             ? Task.FromResult(invalidPlayer)
             : CallAsync(
                 "player_info",
@@ -105,13 +107,21 @@ public sealed class ReadTools(ITShockClient client)
         OpenWorld = false)]
     [Description("Returns the group and id of one registered account, looked up by name or by numeric id.")]
     public Task<string> UserInfo(
-        [Description("Account name, or numeric id when type is 'id'.")] string user,
-        [Description("Lookup type: 'name' or 'id'. Defaults to 'name'.")] string type = "name",
+        [Description("Account name, or numeric id when type is 'id'. At most 64 characters.")]
+        [MaxLength(ArgumentLimits.AccountName)] string user,
+        [Description("Lookup type: 'name' or 'id'. Defaults to 'name'.")]
+        [MaxLength(ArgumentLimits.LookupType)] string type = "name",
         CancellationToken cancellationToken = default)
     {
-        if (RequireText(user, "user") is { } invalidUser)
+        if (ToolSupport.RequireText(user, "user", ArgumentLimits.AccountName) is { } invalidUser)
         {
             return Task.FromResult(invalidUser);
+        }
+
+        if (!string.IsNullOrWhiteSpace(type) &&
+            ToolSupport.RequireText(type, "type", ArgumentLimits.LookupType) is { } invalidType)
+        {
+            return Task.FromResult(invalidType);
         }
 
         var lookupType = string.IsNullOrWhiteSpace(type) ? "name" : type.Trim().ToLowerInvariant();
@@ -152,9 +162,10 @@ public sealed class ReadTools(ITShockClient client)
     [Description(
         "Returns one group's parent, chat color, granted permissions, negated permissions and total permissions.")]
     public Task<string> GroupInfo(
-        [Description("Exact group name, for example 'default' or 'owner'.")] string group,
+        [Description("Exact group name, for example 'default' or 'owner'. At most 64 characters.")]
+        [MaxLength(ArgumentLimits.GroupName)] string group,
         CancellationToken cancellationToken = default) =>
-        RequireText(group, "group") is { } invalidGroup
+        ToolSupport.RequireText(group, "group", ArgumentLimits.GroupName) is { } invalidGroup
             ? Task.FromResult(invalidGroup)
             : CallAsync(
                 "group_info",
@@ -191,16 +202,6 @@ public sealed class ReadTools(ITShockClient client)
                 "/v3/bans/read",
                 new Dictionary<string, string?> { ["ticketNumber"] = ticketNumber.ToString() },
                 cancellationToken);
-
-    /// <summary>
-    /// Returns the error envelope for a missing or blank text argument, or
-    /// <see langword="null"/> when the value is usable. Validation runs before any
-    /// HTTP call so an invalid request never reaches the server.
-    /// </summary>
-    private static string? RequireText(string? value, string parameterName) =>
-        string.IsNullOrWhiteSpace(value)
-            ? ToolResults.Error(ErrorCodes.InvalidArgument, $"'{parameterName}' must not be empty.")
-            : null;
 
     private async Task<string> CallAsync(
         string operation,

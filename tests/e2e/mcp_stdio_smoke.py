@@ -327,6 +327,23 @@ def run(
         "events": call(8, "events_since", {}),
     }
 
+    if allow_write:
+        before_valid = len(seen)
+        results["broadcast_max"] = call(27, "broadcast", {"message": "a" * 256})
+        results["broadcast_max_requests"] = len(seen) - before_valid
+
+    before_invalid = len(seen)
+    results["player_over"] = call(31, "player_info", {"player": "p" * 65})
+    results["user_over"] = call(32, "user_info", {"user": "u" * 65})
+    results["group_over"] = call(33, "group_info", {"group": "g" * 65})
+    if allow_write:
+        results["broadcast_over"] = call(28, "broadcast", {"message": "a" * 257})
+        results["kick_over_reason"] = call(
+            29, "kick_player", {"player": "Alice", "reason": "r" * 201})
+        results["kill_over_source"] = call(
+            30, "kill_player", {"player": "Alice", "from": "s" * 65})
+    results["invalid_requests"] = len(seen) - before_invalid
+
     if bridge is not None:
         results["events_by_cursor"] = call(9, "events_since", {"cursor": 1})
         results["events_expired"] = call(10, "events_since", {"cursor": 99})
@@ -368,6 +385,16 @@ def run(
                 {"name": "arena", "x": 300, "y": 300, "width": 20, "height": 20})
             results["region_delete_disabled"] = call(
                 20, "region_delete", {"name": "arena", "confirm": True})
+
+        before_invalid_bridge = len(bridge_seen)
+        results["region_over"] = call(34, "region_info", {"name": "r" * 129})
+        results["region_control"] = call(35, "region_info", {"name": "spawn\nchild"})
+        if write_scenario:
+            results["region_owner_over"] = call(
+                36, "region_create",
+                {"name": "arena", "x": 300, "y": 300, "width": 20, "height": 20,
+                 "owner": "o" * 129})
+        results["invalid_bridge_requests"] = len(bridge_seen) - before_invalid_bridge
 
     send({"jsonrpc": "2.0", "id": 26, "method": "tools/list", "params": {}})
     while True:
@@ -454,6 +481,19 @@ def main() -> int:
         check(results["wrong_type"].get("isError") is True and
               wrong_envelope["error"]["code"] == "invalid_argument",
               "wrongly typed arguments keep the stable invalid_argument envelope")
+
+        check(results["broadcast_max"]["ok"] is True and
+              results["broadcast_max_requests"] == 1,
+              "a message at the limit reaches TShock exactly once")
+        check(results["invalid_requests"] == 0,
+              "over-limit arguments never reach TShock")
+        for key in ("broadcast_over", "kick_over_reason", "kill_over_source",
+                    "player_over", "user_over", "group_over"):
+            check(results[key]["error"]["code"] == "invalid_argument",
+                  f"{key} keeps the invalid_argument envelope")
+        check("a" * 257 not in stderr,
+              "the rejected payload never appears in stderr")
+
         check(results["tools"]["server_status"]["annotations"]["readOnlyHint"] is True,
               "read tools are annotated as read-only")
         check(results["tools"]["kick_player"]["annotations"]["destructiveHint"] is True,
@@ -466,6 +506,32 @@ def main() -> int:
         check(results["tools"]["events_since"]["annotations"]["readOnlyHint"] is True,
               "events_since is annotated as read-only")
         check(len(results["tools"]) == 23, "tools/list exposes the 23 documented tools")
+
+        max_lengths = {
+            ("broadcast", "message"): 256,
+            ("kick_player", "player"): 64,
+            ("kick_player", "reason"): 200,
+            ("kill_player", "player"): 64,
+            ("kill_player", "from"): 64,
+            ("mute_player", "player"): 64,
+            ("player_info", "player"): 64,
+            ("user_info", "user"): 64,
+            ("user_info", "type"): 16,
+            ("group_info", "group"): 64,
+            ("region_info", "name"): 128,
+            ("region_create", "name"): 128,
+            ("region_create", "owner"): 128,
+            ("region_delete", "name"): 128,
+        }
+        wrong_limits = [
+            f"{tool}.{parameter}"
+            for (tool, parameter), expected in max_lengths.items()
+            if (results["tools"].get(tool, {}).get("inputSchema", {})
+                .get("properties", {}).get(parameter, {}).get("maxLength") != expected)
+        ]
+        check(not wrong_limits,
+              "every text argument publishes its maxLength in inputSchema" +
+              (f" (wrong: {wrong_limits})" if wrong_limits else ""))
 
         # Clients must not need the SDK defaults: every tool declares the four hints
         # as real booleans, which is also what the OpenAI directory requires.
@@ -541,6 +607,11 @@ def main() -> int:
             bad_name = json.loads(results["region_bad_name"]["content"][0]["text"])
             check(bad_name["error"]["code"] == "invalid_argument",
                   "an empty region name keeps the invalid_argument envelope")
+            check(results["region_over"]["error"]["code"] == "invalid_argument" and
+                  results["region_control"]["error"]["code"] == "invalid_argument",
+                  "over-limit and control-character region names keep invalid_argument")
+            check(results["invalid_bridge_requests"] == 0,
+                  "invalid region arguments never reach the bridge")
 
             check(results["region_create_disabled"]["error"]["code"] == "write_disabled",
                   "region_create is blocked when writes are disabled")
@@ -569,6 +640,10 @@ def main() -> int:
                   "an owner outside the server policy maps to owner_not_allowed")
             check(results["region_create_owner"]["data"]["owner"] == "alice",
                   "an allowed owner is forwarded to the bridge")
+            check(results["region_owner_over"]["error"]["code"] == "invalid_argument",
+                  "an over-limit owner keeps the invalid_argument envelope")
+            check(results["invalid_bridge_requests"] == 0,
+                  "invalid region writes never reach the bridge")
             check(results["region_delete_unconfirmed"]["error"]["code"] == "confirmation_required",
                   "deleting without confirmation is refused when the client cannot ask")
             check(results["region_delete"]["ok"] is True, "region_delete deletes the region")

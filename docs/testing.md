@@ -22,6 +22,15 @@ usar la funcionalidad.
 | Gateway MCP del puente | Las 5 tools del puente por stdio contra un puente falso, incluida la confirmación por elicitation. | `python3 tests/e2e/mcp_stdio_smoke.py` | Puente falso en puerto efímero | Sí |
 | Servidor real | Integración completa: TShock, plugin, gateway y cliente MCP. | Cliente MCP con secretos desde archivo | LAN o loopback | Sí, cuando la feature toca TShock |
 
+### Límites de argumentos
+
+La suite unitaria cubre, por cada argumento de texto, `max-1`, `max`, `max+1`, vacío, CRLF, NUL,
+ANSI, bidi y zero-width; comprueba el conteo por code points y que no se hizo ninguna petición.
+`ArgumentLimitContractTests` recorre por reflexión todas las `[McpServerTool]` y falla si un
+parámetro `string` no declara `[MaxLength]`. La e2e comprueba el rechazo por MCP, que el contador de
+peticiones del TShock/puente falso no crece, que el payload no aparece en `stderr` y que
+`tools/list` publica `maxLength`.
+
 ## Comandos
 
 ```bash
@@ -33,7 +42,7 @@ dotnet test -c Release --no-build
 python3 tests/e2e/mcp_stdio_smoke.py
 ```
 
-Resultado esperado hoy: 0 advertencias, 212 pruebas superadas y `E2E PASSED` con 52 comprobaciones.
+Resultado esperado hoy: 0 advertencias, 288 pruebas superadas y `E2E PASSED` con 78 comprobaciones.
 
 ### Plugin del puente
 
@@ -82,6 +91,8 @@ puente solo por haberla probado con `curl`.
 
 - [ ] La ruta existe en la API REST de TShock y está permitida por la fase.
 - [ ] Los argumentos se validan antes de la red y devuelven `invalid_argument`.
+- [ ] Todo argumento `string` declara `[MaxLength]` y el esquema publica `maxLength`.
+- [ ] Tiene pruebas de frontera y de caracteres de control, y la e2e comprueba que no hay petición.
 - [ ] Devuelve el sobre estable mediante `ToolResults`.
 - [ ] Si escribe, comprueba `TSHOCK_MCP_ALLOW_WRITE` y devuelve `write_disabled`.
 - [ ] Está documentada en `docs/tools.md` y en la tabla resumida del `README.md`.
@@ -91,6 +102,7 @@ puente solo por haberla probado con `curl`.
 ### Tool del puente
 
 - [ ] La ruta existe en el plugin y está documentada en `docs/bridge.md`.
+- [ ] Los argumentos de texto declaran su límite y lo validan antes de la red.
 - [ ] La llamada pasa por `BridgeClient`, no por un `HttpClient` ad hoc.
 - [ ] El token del puente no se registra ni se devuelve.
 - [ ] Los errores se traducen a los códigos públicos de
@@ -118,6 +130,7 @@ puente solo por haberla probado con `curl`.
 | Pieza | Unidad | Plugin HTTP | MCP stdio | Servidor real |
 | --- | --- | --- | --- | --- |
 | 18 tools REST de Fase 0 | Sí | No aplica | Sí: catálogo y casos representativos | Sí |
+| Límites de argumentos | Sí: frontera, code points, control y guard de reflexión | No aplica | Sí: rechazo, `maxLength` y contador de peticiones | Pendiente: chat real con el límite |
 | Regiones del puente | No | Verificado manualmente | No existe tool | Parcial: crear, leer y borrar |
 | Eventos del puente | Sí (`EventBuffer`) | Verificado manualmente | No existe tool | Parcial: región, entrada y comando |
 | `BridgeClient` | Sí (falso HTTP) | No aplica | Sí | No |

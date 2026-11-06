@@ -16,8 +16,38 @@ Convenciones de la tabla:
 - **Efectos**: consecuencia sobre el servidor. Las herramientas de lectura no mutan estado.
 - Las herramientas de escritura requieren además `TSHOCK_MCP_ALLOW_WRITE=true`; sin esa variable
   devuelven `write_disabled` sin llegar a TShock.
-- **Argumentos**: faltante, vacío (cadena vacía o solo espacios) o de tipo incorrecto produce
-  `invalid_argument` sin ninguna petición HTTP. El cliente nunca completa ni adivina valores.
+- **Argumentos**: faltante, vacío (cadena vacía o solo espacios), de tipo incorrecto, demasiado
+  largo o con caracteres de control produce `invalid_argument` sin ninguna petición HTTP. El cliente
+  nunca completa ni adivina valores.
+
+### Límites de argumentos de texto
+
+Todos los argumentos `string` declaran un límite en el `inputSchema` como `maxLength`. El conteo es
+en **code points Unicode**, igual que JSON Schema: un emoji cuenta como uno, no como dos unidades
+UTF-16. La validación en runtime es la autoridad; el esquema solo evita que un cliente conforme
+genere el valor inválido. Un valor por encima del límite, o con caracteres de control o formato
+(CRLF, ANSI, bidi, zero-width, U+2028/U+2029), devuelve `invalid_argument` antes de cualquier
+petición. Se conservan ZWNJ y ZWJ porque son necesarios para secuencias de emoji y para varias
+escrituras.
+
+| Herramienta | Argumento | Límite | Por qué |
+| --- | --- | --- | --- |
+| `broadcast` | `message` | 256 | Dos líneas de chat; evita inundar el chat. |
+| `kick_player` | `player` | 64 | Nombre de jugador; alineado con el puente. |
+| `kick_player` | `reason` | 200 | Texto mostrado al jugador y registrado por TShock. |
+| `kill_player` | `player` | 64 | Nombre de jugador. |
+| `kill_player` | `from` | 64 | Atribución de un nombre de jugador. |
+| `mute_player` | `player` | 64 | Nombre de jugador. |
+| `player_info` | `player` | 64 | Nombre de jugador. |
+| `user_info` | `user` | 64 | Nombre de cuenta. |
+| `user_info` | `type` | 16 | Conjunto cerrado `name`/`id`. |
+| `group_info` | `group` | 64 | Nombre de grupo. |
+| `region_info`, `region_create`, `region_delete` | `name` | 128 | Contrato del puente; segmento de URL. |
+| `region_create` | `owner` | 128 | Mismo contrato que el nombre de región. |
+
+Los límites son constantes del código (`Tools/ToolSupport.cs`), no variables de entorno: forman parte
+del contrato. `tests/TShock.MCP.Server.Tests/ArgumentLimitContractTests.cs` recorre por reflexión
+todas las tools y falla si un parámetro `string` nuevo no declara su límite.
 
 ## Anotaciones MCP
 
@@ -63,13 +93,13 @@ MCP por stdio.
 | `server_status` | Estado del servidor: nombre, versiones de Terraria y TShock, puerto, jugadores conectados y máximos, mundo y tiempo en línea. Primera comprobación de salud recomendada. | `GET /v2/server/status` | Ninguno | — | Ninguno |
 | `world_info` | Metadatos del mundo: nombre, tamaño en tiles, hora, si es de día, luna de sangre e invasión. | `GET /world/read` | Ninguno | — | Ninguno |
 | `players_list` | Jugadores conectados con apodo, cuenta, grupo, estado, código de estado y equipo. No incluye IP. | `GET /v2/players/list` | Ninguno | — | Ninguno |
-| `player_info` | Detalle de un jugador conectado: inventario, equipo, buffs, grupo y silencio. La IP se redacta por defecto. | `GET /v4/players/read` | `tshock.rest.users.info` | `player` (nombre exacto en el juego) | Ninguno |
+| `player_info` | Detalle de un jugador conectado: inventario, equipo, buffs, grupo y silencio. La IP se redacta por defecto. | `GET /v4/players/read` | `tshock.rest.users.info` | `player` (nombre exacto en el juego, máx. 64) | Ninguno |
 | `server_motd` | Mensaje del día que se muestra al entrar, si está configurado. | `GET /v3/server/motd` | Ninguno | — | Ninguno |
 | `server_rules` | Texto de reglas del servidor, si está configurado. | `GET /v3/server/rules` | Ninguno | — | Ninguno |
 | `users_list` | Cuentas registradas con id numérico, nombre y grupo. | `GET /v2/users/list` | `tshock.rest.users.view` | — | Ninguno |
-| `user_info` | Detalle de una cuenta registrada. | `GET /v2/users/read` | `tshock.rest.users.view` | `user`, `type` (`name` o `id`, por defecto `name`) | Ninguno |
+| `user_info` | Detalle de una cuenta registrada. | `GET /v2/users/read` | `tshock.rest.users.view` | `user` (máx. 64), `type` (`name` o `id`, por defecto `name`, máx. 16) | Ninguno |
 | `groups_list` | Grupos de permisos definidos en TShock. | `GET /v2/groups/list` | `tshock.rest.groups.view` | — | Ninguno |
-| `group_info` | Detalle de un grupo: permisos, color y jerarquía. | `GET /v2/groups/read` | `tshock.rest.groups.view` | `group` (nombre del grupo) | Ninguno |
+| `group_info` | Detalle de un grupo: permisos, color y jerarquía. | `GET /v2/groups/read` | `tshock.rest.groups.view` | `group` (nombre del grupo, máx. 64) | Ninguno |
 | `bans_list` | Prohibiciones registradas; TShock puede incluir registros históricos, no solo las vigentes. | `GET /v3/bans/list` | `tshock.rest.bans.view` | — | Ninguno |
 | `ban_info` | Detalle de una prohibición por número de ticket. | `GET /v3/bans/read` | `tshock.rest.bans.view` | `ticketNumber` | Ninguno |
 
@@ -77,10 +107,10 @@ MCP por stdio.
 
 | Herramienta | Propósito | Ruta | Permiso | Argumentos | Efectos |
 | --- | --- | --- | --- | --- | --- |
-| `broadcast` | Envía un mensaje a todos los jugadores conectados. | `GET /v2/server/broadcast` | `tshock.rest.broadcast` | `message` | Visible para todos los jugadores de inmediato. |
-| `kick_player` | Expulsa a un jugador del servidor. | `GET /v2/players/kick` | `tshock.rest.kick` | `player`, `reason` (opcional) | El jugador pierde la conexión; puede reconectarse si no está prohibido. |
-| `kill_player` | Mata al personaje de un jugador sin expulsarlo. | `GET /v2/players/kill` | `tshock.rest.kill` | `player`, `from` (opcional) | El jugador muere y reaparece según las reglas del servidor; puede perder objetos si el modo lo permite. |
-| `mute_player` | Silencia el chat de un jugador. | `GET /v2/players/mute` | `tshock.rest.mute` | `player` | Los mensajes del jugador dejan de difundirse. La ruta fija el estado y no lo alterna; no hay herramienta para revertirlo (`/v2/players/unmute` queda fuera de la Fase 0). |
+| `broadcast` | Envía un mensaje a todos los jugadores conectados. | `GET /v2/server/broadcast` | `tshock.rest.broadcast` | `message` (máx. 256) | Visible para todos los jugadores de inmediato. |
+| `kick_player` | Expulsa a un jugador del servidor. | `GET /v2/players/kick` | `tshock.rest.kick` | `player` (máx. 64), `reason` (opcional, máx. 200) | El jugador pierde la conexión; puede reconectarse si no está prohibido. |
+| `kill_player` | Mata al personaje de un jugador sin expulsarlo. | `GET /v2/players/kill` | `tshock.rest.kill` | `player` (máx. 64), `from` (opcional, máx. 64) | El jugador muere y reaparece según las reglas del servidor; puede perder objetos si el modo lo permite. |
+| `mute_player` | Silencia el chat de un jugador. | `GET /v2/players/mute` | `tshock.rest.mute` | `player` (máx. 64) | Los mensajes del jugador dejan de difundirse. La ruta fija el estado y no lo alterna; no hay herramienta para revertirlo (`/v2/players/unmute` queda fuera de la Fase 0). |
 | `save_world` | Guarda el mundo actual en disco. | `GET /v2/world/save` | `tshock.rest.cfg` | — | Persiste el estado del mundo; puede producir una pausa breve. |
 | `reload_config` | Recarga la configuración de TShock. | `GET /v3/server/reload` | `tshock.rest.cfg` | — | Aplica cambios de configuración sin reiniciar; puede alterar el comportamiento del servidor en caliente. |
 
@@ -266,8 +296,8 @@ loopback, con un token propio distinto del token REST. Su contrato HTTP está en
 | `events_since` | Eventos del servidor posteriores a un cursor **exclusivo**: entradas, salidas, chat, comandos, muertes, jefes y cambios de región. | `GET /v1/events` | `cursor` (opcional, entero `>= 0`), `limit` (opcional, 1–500, 100 por defecto) | Ninguno. Solo lectura |
 | `regions_list` | Regiones del mundo actual con área, propietario, protección y listas de usuarios y grupos permitidos. | `GET /v1/regions` | — | Ninguno. Solo lectura |
 | `region_info` | Una región por su nombre exacto. Devuelve `region_not_found` si no existe. | `GET /v1/regions/{name}` | `name` (nombre exacto, máximo 128 caracteres, sin `/` ni caracteres de control) | Ninguno. Solo lectura |
-| `region_create` | Crea una región protegida. El propietario por defecto lo fija el servidor; otro solo si el admin lo permite. | `POST /v1/regions` | `name`, `x`, `y`, `width`, `height`, `owner` (opcional) | Aparece una región nueva y se emite `region.created`. |
-| `region_delete` | Borra una región y su protección. **Irreversible.** | `DELETE /v1/regions/{name}` | `name`, `confirm` (solo para clientes sin elicitation) | Desaparece la región y se emite `region.deleted`. |
+| `region_create` | Crea una región protegida. El propietario por defecto lo fija el servidor; otro solo si el admin lo permite. | `POST /v1/regions` | `name` (máx. 128), `x`, `y`, `width`, `height`, `owner` (opcional, máx. 128) | Aparece una región nueva y se emite `region.created`. |
+| `region_delete` | Borra una región y su protección. **Irreversible.** | `DELETE /v1/regions/{name}` | `name` (máx. 128), `confirm` (solo para clientes sin elicitation) | Desaparece la región y se emite `region.deleted`. |
 
 Comportamiento:
 

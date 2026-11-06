@@ -311,4 +311,71 @@ public sealed class ReadToolsTests
         AssertInvalidArgument(output, "ticketNumber");
         Assert.Empty(client.Calls);
     }
+
+    [Fact]
+    public async Task PlayerInfo_AcceptsPlayerAtTheLimit()
+    {
+        var (tools, client) = Arrange();
+        var player = new string('p', 64);
+
+        var output = await tools.PlayerInfo(player);
+
+        Assert.Equal(player, Assert.Single(client.Calls).Query!["player"]);
+        AssertEnvelope(output, "player_info");
+    }
+
+    [Fact]
+    public async Task PlayerInfo_RejectsOverlongPlayer()
+    {
+        var (tools, client) = Arrange();
+
+        var output = await tools.PlayerInfo(new string('p', 65));
+
+        AssertInvalidArgument(output, "player");
+        Assert.Empty(client.Calls);
+    }
+
+    [Fact]
+    public async Task PlayerInfo_RejectsControlCharacters()
+    {
+        var (tools, client) = Arrange();
+
+        var output = await tools.PlayerInfo("ali\nce");
+
+        AssertInvalidArgument(output, "player");
+        Assert.Empty(client.Calls);
+    }
+
+    [Fact]
+    public async Task UserInfo_RejectsOverlongUser()
+    {
+        var (tools, client) = Arrange();
+
+        var output = await tools.UserInfo(new string('u', 65));
+
+        AssertInvalidArgument(output, "user");
+        Assert.Empty(client.Calls);
+    }
+
+    [Fact]
+    public async Task UserInfo_RejectsOverlongType()
+    {
+        var (tools, client) = Arrange();
+
+        var output = await tools.UserInfo("alice", new string('t', 17));
+
+        AssertInvalidArgument(output, "type");
+        Assert.Empty(client.Calls);
+    }
+
+    [Fact]
+    public async Task GroupInfo_RejectsOverlongGroup()
+    {
+        var (tools, client) = Arrange();
+
+        var output = await tools.GroupInfo(new string('g', 65));
+
+        AssertInvalidArgument(output, "group");
+        Assert.Empty(client.Calls);
+    }
 }

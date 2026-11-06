@@ -25,7 +25,7 @@ detalles de entorno que no son evidentes desde el código.
 | Configuración | Solo variables de entorno, validación estricta al arrancar |
 | Seguridad | Escritura desactivada por defecto, token nunca registrado, IP y credenciales redactadas |
 | Contrato de salida | Sobre JSON estable `ok` / `error` |
-| Pruebas | 213 pruebas xUnit (182 del gateway y 31 del puente) y 52 comprobaciones e2e por stdio |
+| Pruebas | 288 pruebas xUnit (243 del gateway y 45 del puente) y 78 comprobaciones e2e por stdio |
 | Verificación real | Lectura, escritura, errores y redacción probados con un cliente de Terraria en la LAN |
 | Privilegio mínimo | Grupo dedicado `mcp-rest` sin permisos de escritura; la escritura tiene dos barreras (flag del gateway y permisos de TShock) |
 | Distribución | Dockerfile multi-stage y workflow de CI |
@@ -68,7 +68,7 @@ dotnet test -c Release --no-build
 python3 tests/e2e/mcp_stdio_smoke.py
 ```
 
-Resultados esperados: 0 advertencias, 213 pruebas superadas y `E2E PASSED` con 52 comprobaciones.
+Resultados esperados: 0 advertencias, 288 pruebas superadas y `E2E PASSED` con 78 comprobaciones.
 La prueba e2e cubre las 18 tools REST de la Fase 0 y las 5 tools del puente contra un puente falso.
 
 ---
