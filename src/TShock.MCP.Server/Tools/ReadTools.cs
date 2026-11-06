@@ -14,6 +14,7 @@ public sealed class ReadTools(ITShockClient client)
 {
     [McpServerTool(
         Name = "server_status",
+        Title = ToolTitles.ServerStatus,
         ReadOnly = true,
         Destructive = false,
         Idempotent = true,
@@ -26,6 +27,7 @@ public sealed class ReadTools(ITShockClient client)
 
     [McpServerTool(
         Name = "world_info",
+        Title = ToolTitles.WorldInfo,
         ReadOnly = true,
         Destructive = false,
         Idempotent = true,
@@ -38,6 +40,7 @@ public sealed class ReadTools(ITShockClient client)
 
     [McpServerTool(
         Name = "players_list",
+        Title = ToolTitles.PlayersList,
         ReadOnly = true,
         Destructive = false,
         Idempotent = true,
@@ -50,6 +53,7 @@ public sealed class ReadTools(ITShockClient client)
 
     [McpServerTool(
         Name = "player_info",
+        Title = ToolTitles.PlayerInfo,
         ReadOnly = true,
         Destructive = false,
         Idempotent = true,
@@ -71,6 +75,7 @@ public sealed class ReadTools(ITShockClient client)
 
     [McpServerTool(
         Name = "server_motd",
+        Title = ToolTitles.ServerMotd,
         ReadOnly = true,
         Destructive = false,
         Idempotent = true,
@@ -81,6 +86,7 @@ public sealed class ReadTools(ITShockClient client)
 
     [McpServerTool(
         Name = "server_rules",
+        Title = ToolTitles.ServerRules,
         ReadOnly = true,
         Destructive = false,
         Idempotent = true,
@@ -91,6 +97,7 @@ public sealed class ReadTools(ITShockClient client)
 
     [McpServerTool(
         Name = "users_list",
+        Title = ToolTitles.UsersList,
         ReadOnly = true,
         Destructive = false,
         Idempotent = true,
@@ -101,6 +108,7 @@ public sealed class ReadTools(ITShockClient client)
 
     [McpServerTool(
         Name = "user_info",
+        Title = ToolTitles.UserInfo,
         ReadOnly = true,
         Destructive = false,
         Idempotent = true,
@@ -145,6 +153,7 @@ public sealed class ReadTools(ITShockClient client)
 
     [McpServerTool(
         Name = "groups_list",
+        Title = ToolTitles.GroupsList,
         ReadOnly = true,
         Destructive = false,
         Idempotent = true,
@@ -155,6 +164,7 @@ public sealed class ReadTools(ITShockClient client)
 
     [McpServerTool(
         Name = "group_info",
+        Title = ToolTitles.GroupInfo,
         ReadOnly = true,
         Destructive = false,
         Idempotent = true,
@@ -175,6 +185,7 @@ public sealed class ReadTools(ITShockClient client)
 
     [McpServerTool(
         Name = "bans_list",
+        Title = ToolTitles.BansList,
         ReadOnly = true,
         Destructive = false,
         Idempotent = true,
@@ -185,6 +196,7 @@ public sealed class ReadTools(ITShockClient client)
 
     [McpServerTool(
         Name = "ban_info",
+        Title = ToolTitles.BanInfo,
         ReadOnly = true,
         Destructive = false,
         Idempotent = true,

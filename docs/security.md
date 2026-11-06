@@ -301,6 +301,10 @@ En la Fase 0 se considera destructivo o sensible:
 | Guardar el mundo | `save_world` | Igual; puede causar pausas. |
 | Recargar configuración | `reload_config` | Igual; puede cambiar el comportamiento en caliente. |
 
+Los títulos de las herramientas destructivas son explícitos (`Kick player`, `Kill player`,
+`Mute player`, `Delete region`) porque aparecen en el diálogo de consentimiento: un título ambiguo
+debilita la revisión humana.
+
 No implementadas y prohibidas en la Fase 0:
 
 - Prohibir o desprohibir jugadores.

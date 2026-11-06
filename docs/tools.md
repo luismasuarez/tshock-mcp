@@ -86,6 +86,51 @@ repita un borrado o una expulsión tras un timeout.
 Los valores se verifican en `tests/TShock.MCP.Server.Tests/ToolAnnotationTests.cs` y en la prueba
 MCP por stdio.
 
+## Títulos de interfaz
+
+Cada herramienta declara un `title` en inglés, además de su `name` programático. El título es el
+nombre que muestran las interfaces y los diálogos de consentimiento; la descripción sigue siendo el
+texto que lee el modelo. La precedencia del spec es `title` > `annotations.title` > `name`, y el SDK
+publica el mismo valor en `title` y en `annotations.title` para los clientes que todavía leen la
+ubicación anterior.
+
+La política es: imperativo + objeto, sentence case, 40 caracteres como máximo, solo letras, dígitos
+y espacios, sin punto final, sin acrónimos ni jerga, único en el catálogo y distinto del `name`. Los
+títulos son constantes (`Tools/ToolTitles.cs`), no configuración: no dependen de datos del servidor
+ni de texto que un jugador pueda escribir. Las tools destructivas usan verbos explícitos para que el
+diálogo de consentimiento no las presente como una acción inocua.
+
+| Herramienta | Título |
+| --- | --- |
+| `server_status` | Get server status |
+| `world_info` | Get world details |
+| `players_list` | List players |
+| `player_info` | Get player details |
+| `server_motd` | Get message of the day |
+| `server_rules` | Get server rules |
+| `users_list` | List accounts |
+| `user_info` | Get account details |
+| `groups_list` | List groups |
+| `group_info` | Get group details |
+| `bans_list` | List bans |
+| `ban_info` | Get ban details |
+| `events_since` | Get server events |
+| `regions_list` | List regions |
+| `region_info` | Get region details |
+| `broadcast` | Send message to all |
+| `kick_player` | Kick player |
+| `kill_player` | Kill player |
+| `mute_player` | Mute player |
+| `save_world` | Save world |
+| `reload_config` | Reload configuration |
+| `region_create` | Create region |
+| `region_delete` | Delete region |
+
+`ToolTitleTests` compara esta tabla con el catálogo registrado y comprueba que cada título no esté
+vacío, sea único, sea distinto del `name`, respete la longitud y el charset, y coincida con
+`annotations.title`. Una tool nueva sin título o con un título fuera de la política rompe la suite.
+La e2e verifica lo mismo por MCP en un cliente legacy y en uno de 2026-07-28.
+
 ## Herramientas de lectura (siempre disponibles)
 
 | Herramienta | Propósito | Ruta | Permiso | Argumentos | Efectos |

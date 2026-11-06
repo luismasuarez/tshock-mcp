@@ -23,6 +23,7 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
 
     [McpServerTool(
         Name = "events_since",
+        Title = ToolTitles.EventsSince,
         ReadOnly = true,
         Destructive = false,
         Idempotent = true,
@@ -70,6 +71,7 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
 
     [McpServerTool(
         Name = "regions_list",
+        Title = ToolTitles.RegionsList,
         ReadOnly = true,
         Destructive = false,
         Idempotent = true,
@@ -83,6 +85,7 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
 
     [McpServerTool(
         Name = "region_info",
+        Title = ToolTitles.RegionInfo,
         ReadOnly = true,
         Destructive = false,
         Idempotent = true,
@@ -110,6 +113,7 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
 
     [McpServerTool(
         Name = "region_create",
+        Title = ToolTitles.RegionCreate,
         ReadOnly = false,
         Destructive = false,
         Idempotent = false,
@@ -178,6 +182,7 @@ public sealed class BridgeTools(IBridgeClient bridge, TShockOptions options)
 
     [McpServerTool(
         Name = "region_delete",
+        Title = ToolTitles.RegionDelete,
         ReadOnly = false,
         Destructive = true,
         Idempotent = false,

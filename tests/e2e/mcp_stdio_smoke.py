@@ -29,6 +29,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DLL = REPO_ROOT / "src" / "TShock.MCP.Server" / "bin" / "Release" / "net8.0" / "tshock-mcp.dll"
 TOKEN = "secret-token"
 BRIDGE_TOKEN = "bridge-secret-token"
+# Never let the caller's environment change the assertions in this script.
+ISOLATED_ENV = (
+    "TSHOCK_MCP_SHOW_IPS", "TSHOCK_MCP_AUDIT_LOG", "TSHOCK_MCP_ALLOW_INSECURE",
+    "TSHOCK_BRIDGE_URL", "TSHOCK_BRIDGE_TOKEN", "TSHOCK_BRIDGE_TOKEN_FILE",
+    "TSHOCK_BRIDGE_TIMEOUT_SECONDS",
+)
 seen: list[tuple[str, dict[str, list[str]]]] = []
 bridge_seen: list[str] = []
 
@@ -257,11 +263,7 @@ def run(
         "TSHOCK_MCP_TIMEOUT_SECONDS": "10",
     })
     # Never let the caller's environment change the assertions below.
-    for name in (
-        "TSHOCK_MCP_SHOW_IPS", "TSHOCK_MCP_AUDIT_LOG", "TSHOCK_MCP_ALLOW_INSECURE",
-        "TSHOCK_BRIDGE_URL", "TSHOCK_BRIDGE_TOKEN", "TSHOCK_BRIDGE_TOKEN_FILE",
-        "TSHOCK_BRIDGE_TIMEOUT_SECONDS",
-    ):
+    for name in ISOLATED_ENV:
         env.pop(name, None)
     if bridge is not None:
         env["TSHOCK_BRIDGE_URL"] = bridge[0]
@@ -411,6 +413,60 @@ def run(
     return results, proc.stderr.read()
 
 
+def run_modern_tools_list(port: int) -> tuple[dict, dict[str, dict], str]:
+    """Negotiates 2026-07-28 without initialize and returns tools/list.
+
+    The modern revision replaces the initialize handshake with server/discover
+    and per-request _meta, so this probe proves titles reach a current client
+    through that path too, not only through the legacy wire transformation.
+    """
+    env = dict(os.environ)
+    env.update({
+        "TSHOCK_REST_URL": f"http://127.0.0.1:{port}",
+        "TSHOCK_TOKEN": TOKEN,
+        "TSHOCK_MCP_ALLOW_WRITE": "false",
+        "TSHOCK_MCP_TIMEOUT_SECONDS": "10",
+    })
+    for name in ISOLATED_ENV:
+        env.pop(name, None)
+
+    proc = subprocess.Popen(
+        ["dotnet", str(DEFAULT_DLL)],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env=env, text=True, bufsize=1,
+    )
+    messages: "queue.Queue[str | None]" = queue.Queue()
+    threading.Thread(target=_pump, args=(proc.stdout, messages), daemon=True).start()
+
+    def send(message: dict) -> None:
+        proc.stdin.write(json.dumps(message) + "\n")
+        proc.stdin.flush()
+
+    meta = {
+        "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+        "io.modelcontextprotocol/clientInfo": {"name": "e2e-modern", "version": "0.1"},
+        "io.modelcontextprotocol/clientCapabilities": {},
+    }
+    send({"jsonrpc": "2.0", "id": 1, "method": "server/discover",
+          "params": {"_meta": meta}})
+    discover = read_message(messages)
+    send({"jsonrpc": "2.0", "id": 2, "method": "tools/list",
+          "params": {"_meta": meta}})
+    while True:
+        message = read_message(messages)
+        if message.get("id") == 2:
+            tools = {tool["name"]: tool for tool in message["result"]["tools"]}
+            break
+
+    proc.stdin.close()
+    try:
+        proc.wait(timeout=15)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        raise
+    return discover, tools, proc.stderr.read()
+
+
 def check(condition: bool, message: str) -> None:
     if not condition:
         print(f"FAIL: {message}")
@@ -506,6 +562,35 @@ def main() -> int:
         check(results["tools"]["events_since"]["annotations"]["readOnlyHint"] is True,
               "events_since is annotated as read-only")
         check(len(results["tools"]) == 23, "tools/list exposes the 23 documented tools")
+
+        legacy_titles = {
+            name: tool.get("title") for name, tool in results["tools"].items()
+        }
+        check(all(isinstance(title, str) and title.strip()
+                  for title in legacy_titles.values()),
+              "every tool declares a non-empty title")
+        check(all((results["tools"][name].get("annotations") or {}).get("title") == title
+                  for name, title in legacy_titles.items()),
+              "every title is mirrored in annotations.title")
+        check(len(set(legacy_titles.values())) == 23,
+              "tool titles are unique")
+
+        discover, modern_tools, modern_stderr = run_modern_tools_list(port)
+        check("result" in discover and
+              "2026-07-28" in discover["result"].get("supportedVersions", []),
+              "server/discover advertises 2026-07-28")
+        modern_titles = {
+            name: tool.get("title") for name, tool in modern_tools.items()
+        }
+        check(len(modern_tools) == 23,
+              "a 2026-07-28 client sees the 23 tools")
+        check(modern_titles == legacy_titles,
+              "legacy and modern clients receive the same titles")
+        check(all((modern_tools[name].get("annotations") or {}).get("title") == title
+                  for name, title in modern_titles.items()),
+              "a 2026-07-28 client receives annotations.title too")
+        check(TOKEN not in modern_stderr,
+              "token never appears in the modern client's stderr")
 
         max_lengths = {
             ("broadcast", "message"): 256,

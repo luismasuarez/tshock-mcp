@@ -30,7 +30,7 @@ Reglas que ninguna entrada puede romper:
 | --- | --- | --- | --- | --- | --- |
 | P1-09 | Taxonomía única de códigos de error | P1 | 1 sesión | — | Hecho |
 | P0-02 | Límites y política de argumentos de texto | P0 | 1 sesión | — | Hecho |
-| P0-06 | `title` en las 23 tools | P0 | 1 sesión | — | Pendiente |
+| P0-06 | Títulos de tool como contrato | P0 | 1 sesión | — | Hecho |
 | P2-15 | Snapshot del contrato de `tools/list` | P2 | 1 sesión | P0-06 | Pendiente |
 | P0-03 | Rate limiting por tool | P0 | 1 sesión | P1-09 | Pendiente |
 | P0-04 | Correlación en la auditoría | P0 | 1 sesión | — | Pendiente |
@@ -160,13 +160,43 @@ Reglas que ninguna entrada puede romper:
   el cuerpo original y que la paginación no pierde ni duplica elementos.
 - **Riesgo:** cambiar el significado de `data` cuando se pagina. Documentarlo como modo opt-in.
 
-### P0-06 · `title` en las 23 tools
+### P0-06 · Títulos de tool como contrato de interfaz
 
 - **Prioridad:** P0 · **Esfuerzo:** 1 sesión · **Depende de:** —
-- **Problema:** ninguna tool declara `title`. El spec lo soporta y las interfaces lo muestran.
-- **Cambios:** añadir `Title` a cada `[McpServerTool]`, en inglés y en formato legible
-  («Server status», «List players»). Actualizar `docs/tools.md`.
-- **Aceptación:** prueba que exige `title` no vacío en las 23; snapshot actualizado.
+- **Problema:** las 23 tools no declaran `title`, así que la interfaz cae al `name` programático
+  (`server_status`, `kick_player`). El spec define `title` en `BaseMetadata` y en `ToolAnnotations`,
+  con precedencia `title` > `annotations.title` > `name`, y lo describe como nombre para UI, no
+  como descripción para el modelo. Sin política, los títulos se duplican, mezclan gramáticas, usan
+  jerga o hacen que una acción destructiva parezca inofensiva en el diálogo de consentimiento.
+  Tampoco hay guard: una tool 24 puede entrar sin título.
+- **Evidencia:** captura de `tools/list` del binario anterior bajo 2025-06-18, 2025-11-25 y
+  2026-07-28 (`server/discover` + `_meta`): 23 tools, `title` ausente en 23/23 y
+  `annotations.title` ausente en 23/23. En el SDK 2.3.0, `McpServerToolAttribute.Title` alimenta
+  `Tool.Title` y `Annotations.Title` (`AIFunctionMcpServerTool`), y la ruta legacy
+  (`BuildLegacyWireProtocolTool`) copia ambos; el campo es aditivo en las tres revisiones.
+- **Política:** inglés, imperativo + objeto, sentence case, 40 caracteres como máximo, solo
+  letras/dígitos/espacios, sin punto final, sin acrónimos ni jerga, único en el catálogo, distinto
+  del `name`, estático (nunca derivado de datos del servidor) y sin prefijo «TShock». Las tools
+  destructivas usan verbos explícitos. `tools/list` no negocia locale: se elige un idioma coherente
+  para todo el catálogo, no una mezcla.
+- **Cambios:**
+  - `Tools/ToolTitles.cs` con una constante por tool y la política en el comentario.
+  - `Title = ToolTitles.X` en las 23 `[McpServerTool]`; no se tocan nombres, descripciones, hints,
+    rutas ni el sobre.
+  - `ToolTitleTests`: registro real por ensamblado; tabla esperada independiente de 23 títulos;
+    no vacíos, únicos, distintos del `name`, ≤ 40, sentence case, sin espacios dobles ni punto
+    final, `Title == Annotations.Title`; una tool nueva sin título o fuera de la tabla falla.
+  - e2e: un cliente legacy (2025-06-18) y uno moderno (`server/discover` + `_meta` 2026-07-28)
+    reciben los 23 títulos; el resto del payload no cambia.
+  - `docs/tools.md` con la tabla canónica de títulos y la precedencia; `docs/testing.md` con la
+    prueba; una frase en `docs/security.md` sobre títulos explícitos en operaciones destructivas.
+- **Aceptación:** 23/23 títulos no vacíos en `tools/list` en las dos eras; `title` y
+  `annotations.title` coinciden; unicidad e invariantes verdes; el diff del payload solo agrega
+  esos campos; una tool nueva sin título rompe la suite; build, pruebas y e2e verdes.
+- **Riesgo:** `title` es aditivo y no cambia la invocación ni el sobre. Un cliente puede refrescar
+  su caché de `tools/list`; es esperable. Un título engañoso es un riesgo de consentimiento, por
+  eso las destructivas usan verbos explícitos. El snapshot completo de `tools/list` sigue siendo
+  P2-15: aquí solo se fija la tabla de títulos y sus invariantes.
 
 ### P0-07 · `isError` coherente con el sobre
 
@@ -422,3 +452,4 @@ Al terminar:
 | 2026-11-05 | Creación del backlog | — | Revisión contra spec 2026-07-28, security best practices, SDK 2.3.0 y GitHub MCP Server. |
 | 2026-11-05 | P1-09 · Taxonomía única de códigos de error | — | Commit único; 20 códigos públicos y 17 wire codes centralizados, tablas canónicas y pruebas bidireccionales. |
 | 2026-11-05 | P0-02 · Límites y política de argumentos de texto | — | Commit único; code points, control/formato, `maxLength` en `inputSchema`, guard de reflexión y e2e con contador de peticiones. |
+| 2026-11-05 | P0-06 · Títulos de tool como contrato de interfaz | — | Commit único; 23 títulos con política, guard de catálogo y verificación legacy/modern. |

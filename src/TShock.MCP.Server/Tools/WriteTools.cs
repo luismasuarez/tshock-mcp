@@ -14,6 +14,7 @@ public sealed class WriteTools(ITShockClient client, TShockOptions options)
 {
     [McpServerTool(
         Name = "broadcast",
+        Title = ToolTitles.Broadcast,
         ReadOnly = false,
         Destructive = false,
         Idempotent = false,
@@ -45,6 +46,7 @@ public sealed class WriteTools(ITShockClient client, TShockOptions options)
 
     [McpServerTool(
         Name = "kick_player",
+        Title = ToolTitles.KickPlayer,
         ReadOnly = false,
         Destructive = true,
         Idempotent = false,
@@ -89,6 +91,7 @@ public sealed class WriteTools(ITShockClient client, TShockOptions options)
 
     [McpServerTool(
         Name = "kill_player",
+        Title = ToolTitles.KillPlayer,
         ReadOnly = false,
         Destructive = true,
         Idempotent = false,
@@ -133,6 +136,7 @@ public sealed class WriteTools(ITShockClient client, TShockOptions options)
 
     [McpServerTool(
         Name = "mute_player",
+        Title = ToolTitles.MutePlayer,
         ReadOnly = false,
         Destructive = true,
         Idempotent = false,
@@ -164,6 +168,7 @@ public sealed class WriteTools(ITShockClient client, TShockOptions options)
 
     [McpServerTool(
         Name = "save_world",
+        Title = ToolTitles.SaveWorld,
         ReadOnly = false,
         Destructive = false,
         Idempotent = true,
@@ -178,6 +183,7 @@ public sealed class WriteTools(ITShockClient client, TShockOptions options)
 
     [McpServerTool(
         Name = "reload_config",
+        Title = ToolTitles.ReloadConfig,
         ReadOnly = false,
         Destructive = false,
         Idempotent = true,

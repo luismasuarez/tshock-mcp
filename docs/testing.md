@@ -31,6 +31,14 @@ parámetro `string` no declara `[MaxLength]`. La e2e comprueba el rechazo por MC
 peticiones del TShock/puente falso no crece, que el payload no aparece en `stderr` y que
 `tools/list` publica `maxLength`.
 
+### Títulos de las tools
+
+`ToolTitleTests` recorre el catálogo registrado por ensamblado y compara los 23 títulos con una
+tabla independiente. Falla si un título falta, se duplica, coincide con el `name`, supera 40
+caracteres, usa un carácter fuera de la política o no coincide con `annotations.title`. La e2e
+comprueba los títulos en un cliente legacy (2025-06-18) y en uno moderno (`server/discover` +
+`_meta` 2026-07-28), y que ambos reciban el mismo valor.
+
 ## Comandos
 
 ```bash
@@ -42,7 +50,7 @@ dotnet test -c Release --no-build
 python3 tests/e2e/mcp_stdio_smoke.py
 ```
 
-Resultado esperado hoy: 0 advertencias, 288 pruebas superadas y `E2E PASSED` con 78 comprobaciones.
+Resultado esperado hoy: 0 advertencias, 291 pruebas superadas y `E2E PASSED` con 86 comprobaciones.
 
 ### Plugin del puente
 
