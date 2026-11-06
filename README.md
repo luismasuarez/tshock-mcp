@@ -340,7 +340,7 @@ Antes de habilitar escritura, revise [docs/security.md](docs/security.md).
 
 ## Pruebas
 
-Suite unitaria, sin red (288 pruebas: 243 del gateway y 45 del puente):
+Suite unitaria, sin red (291 pruebas: 246 del gateway y 45 del puente):
 
 ```bash
 dotnet test -c Release
@@ -356,11 +356,19 @@ python3 tests/e2e/mcp_stdio_smoke.py
 
 La prueba e2e requiere Python 3 y verifica el sobre de salida, la redacción de IP y credenciales, el
 bloqueo de escritura, el mapeo de un 403 de TShock, el cursor de `events_since` y la degradación a
-`bridge_unavailable` cuando el puente no responde (78 comprobaciones). Es multiplataforma: usa hilos
+`bridge_unavailable` cuando el puente no responde (96 comprobaciones). Es multiplataforma: usa hilos
 y una cola para leer la salida del proceso, sin depender de `select`.
 
-Cubre las 18 tools REST y las 5 herramientas del puente, incluida la elicitation. La matriz de capas
-y la definición de terminado están en [docs/testing.md](docs/testing.md).
+Cubre las 18 tools REST y las 5 herramientas del puente, incluida la elicitation. El contrato de
+`tools/list` está congelado en `tests/contract/tools-list.snapshot.json` y se verifica en la misma
+e2e en tres eras de protocolo y varios estados de configuración. Para revisarlo o regenerarlo:
+
+```bash
+python3 tests/contract/tools_list_contract.py --check
+python3 tests/contract/tools_list_contract.py --write   # solo tras revisar el diff
+```
+
+La matriz de capas y la definición de terminado están en [docs/testing.md](docs/testing.md).
 
 ## Solución de problemas
 

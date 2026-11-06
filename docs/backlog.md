@@ -31,7 +31,7 @@ Reglas que ninguna entrada puede romper:
 | P1-09 | Taxonomía única de códigos de error | P1 | 1 sesión | — | Hecho |
 | P0-02 | Límites y política de argumentos de texto | P0 | 1 sesión | — | Hecho |
 | P0-06 | Títulos de tool como contrato | P0 | 1 sesión | — | Hecho |
-| P2-15 | Snapshot del contrato de `tools/list` | P2 | 1 sesión | P0-06 | Pendiente |
+| P2-15 | Snapshot del contrato de `tools/list` | P2 | 1 sesión | P0-06 | Hecho |
 | P0-03 | Rate limiting por tool | P0 | 1 sesión | P1-09 | Pendiente |
 | P0-04 | Correlación en la auditoría | P0 | 1 sesión | — | Pendiente |
 | P0-05 | Paginación opcional en listas | P0 | 1 sesión | — | Pendiente |
@@ -337,11 +337,41 @@ Reglas que ninguna entrada puede romper:
 ### P2-15 · Snapshot del contrato de `tools/list`
 
 - **Prioridad:** P2 · **Esfuerzo:** 1 sesión · **Depende de:** P0-06
-- **Problema:** el invariante 5 depende de revisión manual; un cambio accidental de nombre,
-  descripción o hint pasaría desapercibido.
-- **Cambios:** volcar `tools/list` a `tests/contract/tools-list.snapshot.json` y comparar en la e2e.
-  El snapshot incluye nombres, títulos, descripciones, `inputSchema`, `annotations` y orden.
-- **Aceptación:** cualquier diferencia hace fallar la prueba y muestra el diff.
+- **Problema:** el invariante 5 depende de revisión manual; un cambio accidental de nombre, título,
+  descripción, `inputSchema`, anotación u orden pasaría desapercibido. Además, nada demostraba que
+  el catálogo fuera idéntico entre las eras de protocolo ni entre estados de configuración que no
+  deberían afectarlo.
+- **Evidencia:** captura del binario Release por stdio. En `2025-06-18` el resultado solo tiene
+  `tools`; en `2026-07-28` añade `resultType`, `ttlMs`, `cacheScope` y `_meta`. Los 23 objetos de
+  tool son idénticos en ambas eras (`name`, `title`, `description`, `inputSchema`, `annotations`).
+  Seis procesos distintos produjeron el mismo hash canónico; `TSHOCK_MCP_ALLOW_WRITE=false` no
+  cambió el catálogo. El contrato es el catálogo, no el sobre.
+- **Cambios:**
+  - `tests/contract/tools_list_contract.py`: captura por stdio para `2025-06-18`, `2025-11-25` y
+    `2026-07-28`; sigue `nextCursor`; normaliza a `{formatVersion, order, tools}` con claves
+    ordenadas; valida invariantes estructurales; compara por nombre y orden; reporta rutas de campo
+    y diff; modos `--check`, `--write` (rechazado con `CI=true`) y `--self-test`.
+  - `tests/contract/tools-list.snapshot.json`: artefacto generado con las 23 tools, sin campos de
+    sobre, versión ni datos de entorno.
+  - `tests/e2e/mcp_stdio_smoke.py`: ejecuta el self-test; compara el snapshot en cliente legacy,
+    `2025-11-25` y moderno; exige paridad entre eras y entre escritura on/off y puente
+    presente/detenido; imprime el diff ante cualquier diferencia.
+  - `tests/contract/README.md`: procedencia, comando de regeneración, política de cambios (aditivo
+    frente a ruptura), por qué se excluye el sobre y cómo revisar un diff.
+  - `docs/testing.md` con la prueba y el procedimiento; `docs/tools.md` con el puntero al snapshot;
+    `README.md` y `docs/testing.md` con los conteos reales; esta fila y el registro.
+- **Aceptación:**
+  - `--check` pasa en un build limpio y `--write` reproduce el archivo byte a byte.
+  - Cualquier cambio de nombre, título, descripción, `inputSchema`, anotación u orden hace fallar
+    la e2e con la ruta del campo y el diff.
+  - El self-test demuestra que cada clase de mutación se detecta.
+  - El catálogo es idéntico en las tres eras y en los estados de configuración probados.
+  - Dos procesos independientes producen el mismo catálogo normalizado.
+  - Build, pruebas y e2e verdes; comprobación manual opcional con el Inspector oficial.
+- **Riesgo:** un snapshot demasiado rígido frena cambios legítimos. Se mitiga con catálogo (no
+  sobre), formato canónico, comando de actualización explícito y diff por campo. P1-07 puede
+  cambiar el orden: se actualiza el snapshot en ese commit y el diff lo evidencia. No se implementa
+  `structuredContent` (P0-01) ni se congela `server/discover` (P2-16/P2-17).
 
 ### P2-16 · Pistas de caché en `server/discover`
 
@@ -453,3 +483,4 @@ Al terminar:
 | 2026-11-05 | P1-09 · Taxonomía única de códigos de error | — | Commit único; 20 códigos públicos y 17 wire codes centralizados, tablas canónicas y pruebas bidireccionales. |
 | 2026-11-05 | P0-02 · Límites y política de argumentos de texto | — | Commit único; code points, control/formato, `maxLength` en `inputSchema`, guard de reflexión y e2e con contador de peticiones. |
 | 2026-11-05 | P0-06 · Títulos de tool como contrato de interfaz | — | Commit único; 23 títulos con política, guard de catálogo y verificación legacy/modern. |
+| 2026-11-05 | P2-15 · Snapshot del contrato de `tools/list` | — | Commit único; snapshot generado, paridad de tres eras, invariancia de configuración y self-test del comparador. |

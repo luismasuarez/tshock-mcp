@@ -20,6 +20,7 @@ usar la funcionalidad.
 | Plugin HTTP | Contrato del puente: rutas, cursores, errores, regiones. | Script contra `127.0.0.1:7879` con el token del puente | Loopback | No |
 | Gateway MCP | Una tool real por stdio. Fase 0: las 18 tools REST contra un TShock falso. | `python3 tests/e2e/mcp_stdio_smoke.py` | TShock falso en puerto efímero | Sí |
 | Gateway MCP del puente | Las 5 tools del puente por stdio contra un puente falso, incluida la confirmación por elicitation. | `python3 tests/e2e/mcp_stdio_smoke.py` | Puente falso en puerto efímero | Sí |
+| Contrato de `tools/list` | Catálogo completo en tres eras y estados de configuración: snapshot, invariantes y self-test del comparador. | Incluido en la e2e y en `tests/contract/tools_list_contract.py` | Ninguna | Sí |
 | Servidor real | Integración completa: TShock, plugin, gateway y cliente MCP. | Cliente MCP con secretos desde archivo | LAN o loopback | Sí, cuando la feature toca TShock |
 
 ### Límites de argumentos
@@ -39,6 +40,41 @@ caracteres, usa un carácter fuera de la política o no coincide con `annotation
 comprueba los títulos en un cliente legacy (2025-06-18) y en uno moderno (`server/discover` +
 `_meta` 2026-07-28), y que ambos reciban el mismo valor.
 
+### Contrato de `tools/list`
+
+`tests/contract/tools-list.snapshot.json` congela el catálogo que recibe un cliente: nombres,
+títulos, descripciones, `inputSchema`, `annotations` y orden. No congela el sobre (`ttlMs`,
+`cacheScope`, `resultType`, `_meta`), que pertenece a otras entradas del backlog.
+
+La prueba tiene tres capas:
+
+1. **Invariantes estructurales**: nombres únicos, `inputSchema` de tipo `object`, `required`
+   contenido en `properties`, cuatro hints booleanos, título no vacío y distinto del `name`, y
+   descripción no vacía. Se validan antes de escribir el snapshot.
+2. **Igualdad con el snapshot**, por nombre y por orden, con un diff por ruta de campo.
+3. **Self-test del comparador**: muta un nombre, un título, una descripción, un schema, una
+   anotación, el orden, una tool añadida y una eliminada; cada mutación debe fallar en la ruta
+   esperada. Sin esta capa, un snapshot que nunca falla sería una falsa garantía.
+
+La e2e compara el snapshot en las eras `2025-06-18`, `2025-11-25` y `2026-07-28`, y en los estados
+de escritura habilitada/deshabilitada y puente configurado/detenido. El catálogo debe ser idéntico
+en todos. El detalle del formato, la procedencia y la política de cambios está en
+[`tests/contract/README.md`](../tests/contract/README.md).
+
+```bash
+# Verificación del contrato contra el binario (modo por defecto)
+python3 tests/contract/tools_list_contract.py --check
+
+# Prueba del propio comparador
+python3 tests/contract/tools_list_contract.py --self-test
+
+# Regeneración intencional; se rechaza en CI
+python3 tests/contract/tools_list_contract.py --write
+```
+
+Un cambio de nombre, título, descripción, schema, anotación u orden hace fallar la e2e y muestra la
+ruta del campo y el diff. `--write` solo se ejecuta tras revisar ese diff; nunca en CI.
+
 ## Comandos
 
 ```bash
@@ -50,7 +86,7 @@ dotnet test -c Release --no-build
 python3 tests/e2e/mcp_stdio_smoke.py
 ```
 
-Resultado esperado hoy: 0 advertencias, 291 pruebas superadas y `E2E PASSED` con 86 comprobaciones.
+Resultado esperado hoy: 0 advertencias, 291 pruebas superadas y `E2E PASSED` con 96 comprobaciones.
 
 ### Plugin del puente
 

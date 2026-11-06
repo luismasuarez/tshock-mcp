@@ -26,6 +26,12 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+CONTRACT_DIR = Path(__file__).resolve().parent.parent / "contract"
+if str(CONTRACT_DIR) not in sys.path:
+    sys.path.insert(0, str(CONTRACT_DIR))
+
+import tools_list_contract as contract  # noqa: E402  (path is set above)
+
 DEFAULT_DLL = REPO_ROOT / "src" / "TShock.MCP.Server" / "bin" / "Release" / "net8.0" / "tshock-mcp.dll"
 TOKEN = "secret-token"
 BRIDGE_TOKEN = "bridge-secret-token"
@@ -402,7 +408,8 @@ def run(
     while True:
         message = read_message(messages)
         if message.get("id") == 26:
-            results["tools"] = {tool["name"]: tool for tool in message["result"]["tools"]}
+            results["tools_raw"] = message["result"]["tools"]
+            results["tools"] = {tool["name"]: tool for tool in results["tools_raw"]}
             break
     proc.stdin.close()
     try:
@@ -413,7 +420,7 @@ def run(
     return results, proc.stderr.read()
 
 
-def run_modern_tools_list(port: int) -> tuple[dict, dict[str, dict], str]:
+def run_modern_tools_list(port: int) -> tuple[dict, dict[str, dict], list[dict], str]:
     """Negotiates 2026-07-28 without initialize and returns tools/list.
 
     The modern revision replaces the initialize handshake with server/discover
@@ -455,7 +462,8 @@ def run_modern_tools_list(port: int) -> tuple[dict, dict[str, dict], str]:
     while True:
         message = read_message(messages)
         if message.get("id") == 2:
-            tools = {tool["name"]: tool for tool in message["result"]["tools"]}
+            tools_raw = message["result"]["tools"]
+            tools = {tool["name"]: tool for tool in tools_raw}
             break
 
     proc.stdin.close()
@@ -464,7 +472,7 @@ def run_modern_tools_list(port: int) -> tuple[dict, dict[str, dict], str]:
     except subprocess.TimeoutExpired:
         proc.kill()
         raise
-    return discover, tools, proc.stderr.read()
+    return discover, tools, tools_raw, proc.stderr.read()
 
 
 def check(condition: bool, message: str) -> None:
@@ -472,6 +480,16 @@ def check(condition: bool, message: str) -> None:
         print(f"FAIL: {message}")
         sys.exit(1)
     print(f"ok: {message}")
+
+
+def check_catalog(snapshot: dict, tools: list[dict], label: str) -> None:
+    """Every scenario must emit the same catalog frozen in the contract snapshot."""
+    problems = contract.compare_snapshot(snapshot, tools)
+    if problems:
+        print(contract.format_diff(snapshot, tools))
+        details = "\n".join(f"  {problem}" for problem in problems[:40])
+        check(False, f"{label}: tools/list matches the contract snapshot\n{details}")
+    check(True, f"{label}: tools/list matches the contract snapshot")
 
 
 def load_public_error_codes() -> set[str]:
@@ -512,12 +530,26 @@ def main() -> int:
     check("invalid_argument" in known_codes and "bridge_error" in known_codes,
           "the canonical error table is readable")
 
+    try:
+        mutations = contract.self_test()
+    except AssertionError as error:
+        check(False, f"the tools/list contract comparator detects mutations: {error}")
+    check(True, f"the tools/list contract comparator detects {mutations} mutation classes")
+
+    try:
+        contract_snapshot = contract.load_snapshot()
+    except contract.ContractError as error:
+        check(False, f"the tools/list contract snapshot is readable: {error}")
+    check(bool(contract_snapshot["order"]),
+          "the tools/list contract snapshot is present and valid")
+
     server = HTTPServer(("127.0.0.1", 0), Handler)
     port = server.server_address[1]
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
         results, stderr = run(port, allow_write=True)
         check_known_error_codes(results, known_codes)
+        check_catalog(contract_snapshot, results["tools_raw"], "legacy 2025-06-18")
         check(results["status"]["ok"] and results["status"]["data"]["name"] == "E2E",
               "server_status returns the parsed TShock body")
         check(results["status"]["data"]["serverversion"] == "1.4.4.9",
@@ -575,10 +607,13 @@ def main() -> int:
         check(len(set(legacy_titles.values())) == 23,
               "tool titles are unique")
 
-        discover, modern_tools, modern_stderr = run_modern_tools_list(port)
+        discover, modern_tools, modern_tools_raw, modern_stderr = run_modern_tools_list(port)
         check("result" in discover and
               "2026-07-28" in discover["result"].get("supportedVersions", []),
               "server/discover advertises 2026-07-28")
+        check_catalog(contract_snapshot, modern_tools_raw, "modern 2026-07-28")
+        check(contract.normalize(modern_tools_raw) == contract.normalize(results["tools_raw"]),
+              "legacy and modern clients receive the identical catalog")
         modern_titles = {
             name: tool.get("title") for name, tool in modern_tools.items()
         }
@@ -638,6 +673,7 @@ def main() -> int:
         before = len(seen)
         results, _ = run(port, allow_write=False)
         check_known_error_codes(results, known_codes)
+        check_catalog(contract_snapshot, results["tools_raw"], "writes disabled")
         check(results["kick"]["ok"] is False and results["kick"]["error"]["code"] == "write_disabled",
               "kick_player is blocked when writes are disabled")
         check(not any(path == "/v2/players/kick" for path, _ in seen[before:]),
@@ -658,6 +694,7 @@ def main() -> int:
             before = len(bridge_seen)
             results, stderr = run(port, allow_write=False, bridge=(bridge_url, BRIDGE_TOKEN))
             check_known_error_codes(results, known_codes)
+            check_catalog(contract_snapshot, results["tools_raw"], "bridge configured")
 
             check(len(results["events"]["data"]["events"]) == 2,
                   "events_since returns the retained backlog")
@@ -715,6 +752,7 @@ def main() -> int:
             results, stderr = run(
                 port, allow_write=True, bridge=(bridge_url, BRIDGE_TOKEN), write_scenario=True)
             check_known_error_codes(results, known_codes)
+            check_catalog(contract_snapshot, results["tools_raw"], "bridge and writes enabled")
 
             check(results["region_create"]["ok"] is True and
                   results["region_create"]["data"]["owner"] == "mcp-gateway",
@@ -747,6 +785,7 @@ def main() -> int:
             results, _ = run(
                 port, allow_write=True, bridge=(bridge_url, BRIDGE_TOKEN), elicit="decline")
             check_known_error_codes(results, known_codes)
+            check_catalog(contract_snapshot, results["tools_raw"], "protocol 2025-11-25")
             check(results["region_delete_elicit"]["error"]["code"] == "confirmation_declined",
                   "a declined elicitation cancels the deletion")
             check(any(region["name"] == "parcela"
@@ -769,6 +808,7 @@ def main() -> int:
 
             results, _ = run(port, allow_write=False, bridge=(bridge_url, BRIDGE_TOKEN))
             check_known_error_codes(results, known_codes)
+            check_catalog(contract_snapshot, results["tools_raw"], "bridge stopped")
             check(results["events"]["error"]["code"] == "bridge_unavailable",
                   "a stopped bridge maps to bridge_unavailable")
             check(results["status"]["ok"] is True,

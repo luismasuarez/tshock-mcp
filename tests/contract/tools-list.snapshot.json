@@ -1,0 +1,574 @@
+{
+  "formatVersion": 1,
+  "order": [
+    "events_since",
+    "regions_list",
+    "region_info",
+    "region_create",
+    "region_delete",
+    "server_status",
+    "world_info",
+    "players_list",
+    "player_info",
+    "server_motd",
+    "server_rules",
+    "users_list",
+    "user_info",
+    "groups_list",
+    "group_info",
+    "bans_list",
+    "ban_info",
+    "broadcast",
+    "kick_player",
+    "kill_player",
+    "mute_player",
+    "save_world",
+    "reload_config"
+  ],
+  "tools": {
+    "ban_info": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Get ban details"
+      },
+      "description": "Returns one ban by ticket number, including identifier, reason, banning user and dates.",
+      "inputSchema": {
+        "properties": {
+          "ticketNumber": {
+            "description": "Numeric ban ticket number.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ticketNumber"
+        ],
+        "type": "object"
+      },
+      "name": "ban_info",
+      "title": "Get ban details"
+    },
+    "bans_list": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "List bans"
+      },
+      "description": "Lists every ban in the TShock database with ticket number, identifier, reason and dates.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "bans_list",
+      "title": "List bans"
+    },
+    "broadcast": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+        "title": "Send message to all"
+      },
+      "description": "Sends a message to every connected player. Requires TSHOCK_MCP_ALLOW_WRITE=true and the tshock.rest.broadcast permission.",
+      "inputSchema": {
+        "properties": {
+          "message": {
+            "description": "Message to show in-game. Keep it short and plain text. At most 256 characters.",
+            "maxLength": 256,
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "type": "object"
+      },
+      "name": "broadcast",
+      "title": "Send message to all"
+    },
+    "events_since": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Get server events"
+      },
+      "description": "Returns server events published after an exclusive cursor: player joins and leaves, chat, commands, deaths, boss kills and region changes. Keep the returned cursor and pass it as 'cursor' on the next call to receive only new events. Omit 'cursor' to read the retained backlog. Event payloads are marked untrusted when a player can influence their text.",
+      "inputSchema": {
+        "properties": {
+          "cursor": {
+            "default": null,
+            "description": "Exclusive cursor to resume from. Omit it to start from the oldest retained event.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "limit": {
+            "default": null,
+            "description": "Maximum events to return, between 1 and 500. Defaults to 100.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "name": "events_since",
+      "title": "Get server events"
+    },
+    "group_info": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Get group details"
+      },
+      "description": "Returns one group's parent, chat color, granted permissions, negated permissions and total permissions.",
+      "inputSchema": {
+        "properties": {
+          "group": {
+            "description": "Exact group name, for example 'default' or 'owner'. At most 64 characters.",
+            "maxLength": 64,
+            "type": "string"
+          }
+        },
+        "required": [
+          "group"
+        ],
+        "type": "object"
+      },
+      "name": "group_info",
+      "title": "Get group details"
+    },
+    "groups_list": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "List groups"
+      },
+      "description": "Lists every permission group with its parent group and chat color.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "groups_list",
+      "title": "List groups"
+    },
+    "kick_player": {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+        "title": "Kick player"
+      },
+      "description": "Disconnects a player from the server. Requires TSHOCK_MCP_ALLOW_WRITE=true and the tshock.rest.kick permission.",
+      "inputSchema": {
+        "properties": {
+          "player": {
+            "description": "Exact in-game player name (nickname). At most 64 characters.",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "reason": {
+            "default": null,
+            "description": "Optional reason shown to the player. At most 200 characters.",
+            "maxLength": 200,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "player"
+        ],
+        "type": "object"
+      },
+      "name": "kick_player",
+      "title": "Kick player"
+    },
+    "kill_player": {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+        "title": "Kill player"
+      },
+      "description": "Kills a player without kicking them. Requires TSHOCK_MCP_ALLOW_WRITE=true and the tshock.rest.kill permission.",
+      "inputSchema": {
+        "properties": {
+          "from": {
+            "default": null,
+            "description": "Optional name to attribute the kill to. At most 64 characters.",
+            "maxLength": 64,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "player": {
+            "description": "Exact in-game player name (nickname). At most 64 characters.",
+            "maxLength": 64,
+            "type": "string"
+          }
+        },
+        "required": [
+          "player"
+        ],
+        "type": "object"
+      },
+      "name": "kill_player",
+      "title": "Kill player"
+    },
+    "mute_player": {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+        "title": "Mute player"
+      },
+      "description": "Mutes a player so their chat is not broadcast. Requires TSHOCK_MCP_ALLOW_WRITE=true and the tshock.rest.mute permission.",
+      "inputSchema": {
+        "properties": {
+          "player": {
+            "description": "Exact in-game player name (nickname). At most 64 characters.",
+            "maxLength": 64,
+            "type": "string"
+          }
+        },
+        "required": [
+          "player"
+        ],
+        "type": "object"
+      },
+      "name": "mute_player",
+      "title": "Mute player"
+    },
+    "player_info": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Get player details"
+      },
+      "description": "Returns detailed information for one connected player, including inventory, equipment, buffs, group and mute state. The IP address is redacted unless TSHOCK_MCP_SHOW_IPS=true.",
+      "inputSchema": {
+        "properties": {
+          "player": {
+            "description": "Exact in-game player name (nickname). At most 64 characters.",
+            "maxLength": 64,
+            "type": "string"
+          }
+        },
+        "required": [
+          "player"
+        ],
+        "type": "object"
+      },
+      "name": "player_info",
+      "title": "Get player details"
+    },
+    "players_list": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "List players"
+      },
+      "description": "Lists connected players with nickname, account name, group, active state, state code and team. IP addresses are never included on this route.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "players_list",
+      "title": "List players"
+    },
+    "region_create": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+        "title": "Create region"
+      },
+      "description": "Creates a protected region in the world. Requires TSHOCK_MCP_ALLOW_WRITE=true. The owner defaults to the server's configured bridge owner; any other owner must be allowed by the server administrator, otherwise the tool returns owner_not_allowed.",
+      "inputSchema": {
+        "properties": {
+          "height": {
+            "description": "Height in tiles, greater than zero.",
+            "type": "integer"
+          },
+          "name": {
+            "description": "Region name, unique in the world. No slashes. At most 128 characters.",
+            "maxLength": 128,
+            "type": "string"
+          },
+          "owner": {
+            "default": null,
+            "description": "Optional region owner allowed by the server policy. At most 128 characters.",
+            "maxLength": 128,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "width": {
+            "description": "Width in tiles, greater than zero.",
+            "type": "integer"
+          },
+          "x": {
+            "description": "Left tile column of the region, zero or greater.",
+            "type": "integer"
+          },
+          "y": {
+            "description": "Top tile row of the region, zero or greater.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "x",
+          "y",
+          "width",
+          "height"
+        ],
+        "type": "object"
+      },
+      "name": "region_create",
+      "title": "Create region"
+    },
+    "region_delete": {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+        "title": "Delete region"
+      },
+      "description": "Deletes a region and its protection. This cannot be undone. Requires TSHOCK_MCP_ALLOW_WRITE=true. When the client supports elicitation the operator is asked to confirm; otherwise the call must pass 'confirm: true'.",
+      "inputSchema": {
+        "properties": {
+          "confirm": {
+            "default": null,
+            "description": "Explicit confirmation for clients that cannot ask the operator. Ignored when elicitation is available.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "name": {
+            "description": "Exact region name to delete. At most 128 characters.",
+            "maxLength": 128,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "name": "region_delete",
+      "title": "Delete region"
+    },
+    "region_info": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Get region details"
+      },
+      "description": "Returns one region by its exact name: area, owner, whether building is disabled and which users and groups are allowed. Returns region_not_found when the name does not exist.",
+      "inputSchema": {
+        "properties": {
+          "name": {
+            "description": "Exact region name, for example 'spawn'. At most 128 characters.",
+            "maxLength": 128,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "name": "region_info",
+      "title": "Get region details"
+    },
+    "regions_list": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "List regions"
+      },
+      "description": "Lists the regions of the current world with their name, area, owner, protection flags and allowed users and groups. Regions are a bridge feature, so this tool answers bridge_unavailable when the bridge is not configured.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "regions_list",
+      "title": "List regions"
+    },
+    "reload_config": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+        "title": "Reload configuration"
+      },
+      "description": "Reloads TShock configuration, permissions and regions. Some changes still need a restart. Requires TSHOCK_MCP_ALLOW_WRITE=true and the tshock.rest.cfg permission.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "reload_config",
+      "title": "Reload configuration"
+    },
+    "save_world": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+        "title": "Save world"
+      },
+      "description": "Saves the current world to disk. Requires TSHOCK_MCP_ALLOW_WRITE=true and the tshock.rest.cfg permission.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "save_world",
+      "title": "Save world"
+    },
+    "server_motd": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Get message of the day"
+      },
+      "description": "Returns the message of the day shown to players when they join, if one is configured.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "server_motd",
+      "title": "Get message of the day"
+    },
+    "server_rules": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Get server rules"
+      },
+      "description": "Returns the server rules text shown to players, if one is configured.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "server_rules",
+      "title": "Get server rules"
+    },
+    "server_status": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Get server status"
+      },
+      "description": "Returns TShock server status: server name, Terraria and TShock versions, port, connected/max players, world name and uptime. Use it as the first health check.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "server_status",
+      "title": "Get server status"
+    },
+    "user_info": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Get account details"
+      },
+      "description": "Returns the group and id of one registered account, looked up by name or by numeric id.",
+      "inputSchema": {
+        "properties": {
+          "type": {
+            "default": "name",
+            "description": "Lookup type: 'name' or 'id'. Defaults to 'name'.",
+            "maxLength": 16,
+            "type": "string"
+          },
+          "user": {
+            "description": "Account name, or numeric id when type is 'id'. At most 64 characters.",
+            "maxLength": 64,
+            "type": "string"
+          }
+        },
+        "required": [
+          "user"
+        ],
+        "type": "object"
+      },
+      "name": "user_info",
+      "title": "Get account details"
+    },
+    "users_list": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "List accounts"
+      },
+      "description": "Lists every registered TShock account with its numeric id, name and group.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "users_list",
+      "title": "List accounts"
+    },
+    "world_info": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Get world details"
+      },
+      "description": "Returns world metadata: name, tile size, current world time, whether it is daytime, blood moon state and invasion size.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "world_info",
+      "title": "Get world details"
+    }
+  }
+}

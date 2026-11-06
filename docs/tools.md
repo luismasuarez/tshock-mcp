@@ -131,6 +131,16 @@ vacío, sea único, sea distinto del `name`, respete la longitud y el charset, y
 `annotations.title`. Una tool nueva sin título o con un título fuera de la política rompe la suite.
 La e2e verifica lo mismo por MCP en un cliente legacy y en uno de 2026-07-28.
 
+## Contrato del catálogo
+
+Las tablas de este documento son documentación; el contrato observable es el wire de `tools/list`.
+`tests/contract/tools-list.snapshot.json` congela nombres, títulos, descripciones, `inputSchema`,
+`annotations` y orden de las 23 herramientas. La e2e lo compara en las eras `2025-06-18`,
+`2025-11-25` y `2026-07-28`, y en estados de configuración que no deben alterarlo. Un cambio de
+contrato exige actualizar el snapshot de forma intencional; el procedimiento y la política están en
+[`tests/contract/README.md`](../tests/contract/README.md) y en
+[`testing.md`](testing.md#contrato-de-toolslist).
+
 ## Herramientas de lectura (siempre disponibles)
 
 | Herramienta | Propósito | Ruta | Permiso | Argumentos | Efectos |
