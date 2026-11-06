@@ -43,6 +43,12 @@ public sealed record TShockOptions
     public string? AuditLogPath { get; init; }
 
     /// <summary>
+    /// Invocation budget per minute. The default keeps normal interactive use
+    /// untouched while stopping a runaway model from reaching the game server.
+    /// </summary>
+    public RateLimitOptions RateLimit { get; init; } = RateLimitOptions.Default;
+
+    /// <summary>
     /// AgentBridge connection. Null when no <c>TSHOCK_BRIDGE_*</c> variable is set,
     /// which keeps the gateway fully usable against the REST API alone.
     /// </summary>
@@ -110,8 +116,46 @@ public sealed record TShockOptions
             AllowInsecure = allowInsecure,
             Timeout = TimeSpan.FromSeconds(timeoutSeconds),
             AuditLogPath = Get("TSHOCK_MCP_AUDIT_LOG"),
+            RateLimit = ReadRateLimitOptions(),
             Bridge = ReadBridgeOptions(allowInsecure)
         };
+    }
+
+    /// <summary>
+    /// Reads the two rate-limit variables strictly. Zero is rejected instead of
+    /// meaning "unlimited": the MCP specification makes rate limiting mandatory,
+    /// so an accidental zero must not silently remove the guard.
+    /// </summary>
+    private static RateLimitOptions ReadRateLimitOptions() => new()
+    {
+        PerMinute = GetRateLimit("TSHOCK_MCP_RATE_LIMIT_PER_MINUTE", RateLimitOptions.DefaultPerMinute),
+        WritePerMinute = GetRateLimit(
+            "TSHOCK_MCP_WRITE_RATE_LIMIT_PER_MINUTE",
+            RateLimitOptions.DefaultWritePerMinute)
+    };
+
+    private static int GetRateLimit(string name, int fallback)
+    {
+        var raw = Get(name);
+        if (raw is null)
+        {
+            return fallback;
+        }
+
+        if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
+        {
+            throw new ConfigurationException(
+                $"{name} must be an integer number of invocations per minute, for example {fallback}.");
+        }
+
+        if (value is < RateLimitOptions.MinimumPerMinute or > RateLimitOptions.MaximumPerMinute)
+        {
+            throw new ConfigurationException(
+                $"{name} must be between {RateLimitOptions.MinimumPerMinute} and " +
+                $"{RateLimitOptions.MaximumPerMinute}.");
+        }
+
+        return value;
     }
 
     /// <summary>

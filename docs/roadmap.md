@@ -25,7 +25,8 @@ detalles de entorno que no son evidentes desde el código.
 | Configuración | Solo variables de entorno, validación estricta al arrancar |
 | Seguridad | Escritura desactivada por defecto, token nunca registrado, IP y credenciales redactadas |
 | Contrato de salida | Sobre JSON estable `ok` / `error` |
-| Pruebas | 288 pruebas xUnit (243 del gateway y 45 del puente) y 78 comprobaciones e2e por stdio |
+| Rate limiting | Cubos global (120/min), de escritura (20/min) y por tool (fair share 1/2) antes de la red; `rate_limited` con `retryAfterMs` |
+| Pruebas | 314 pruebas xUnit (269 del gateway y 45 del puente) y 107 comprobaciones e2e por stdio |
 | Verificación real | Lectura, escritura, errores y redacción probados con un cliente de Terraria en la LAN |
 | Privilegio mínimo | Grupo dedicado `mcp-rest` sin permisos de escritura; la escritura tiene dos barreras (flag del gateway y permisos de TShock) |
 | Distribución | Dockerfile multi-stage y workflow de CI |
@@ -56,6 +57,8 @@ El detalle de capas y criterios está en [`testing.md`](testing.md).
   `run_command`).
 - Descubrimiento y ejecución de comandos con allowlist.
 - Notificaciones push o streaming de eventos.
+- Rate limiting por cliente, distribuido o con un límite de llamadas en vuelo (bulkhead). El límite
+  local por invocación de P0-03 ya existe.
 - Ejecución de comandos arbitrarios, apagado, mutación de usuarios o prohibiciones.
 - Publicación en GitHub: el repositorio es local y no tiene remoto configurado.
 
@@ -68,7 +71,7 @@ dotnet test -c Release --no-build
 python3 tests/e2e/mcp_stdio_smoke.py
 ```
 
-Resultados esperados: 0 advertencias, 288 pruebas superadas y `E2E PASSED` con 78 comprobaciones.
+Resultados esperados: 0 advertencias, 314 pruebas superadas y `E2E PASSED` con 107 comprobaciones.
 La prueba e2e cubre las 18 tools REST de la Fase 0 y las 5 tools del puente contra un puente falso.
 
 ---
@@ -369,7 +372,8 @@ Permitir despliegues remotos y varios clientes sin compartir un proceso hijo por
 - OAuth 2.1: authorization server, resource metadata, validación de audiencia y `Authorization:
   Bearer` en cada request. Nunca tokens en query string.
 - Scopes por cliente: `read`, `players`, `world`, `admin`.
-- Rate limiting y auditoría correlacionada por cliente.
+- Rate limiting por cliente y auditoría correlacionada por cliente. El límite local por invocación
+  ya existe desde P0-03; aquí se agrega la cuota por identidad y entre procesos.
 - `docker compose` con TShock, gateway y proxy TLS.
 - Documentación de despliegue y rotación de secretos.
 

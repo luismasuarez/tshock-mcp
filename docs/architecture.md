@@ -54,6 +54,7 @@ Componentes internos:
 | `TShock/ITShockClient` | Ejecuta peticiones GET contra la API REST, aplica timeout y traduce fallos a resultados tipados. |
 | `TShock/ToolResults` | Serializa el sobre estable `ok` / `error`. |
 | `TShock/ErrorCodes.cs` | Catálogo público y cerrado de códigos del sobre; la tabla canónica se valida contra él. |
+| `TShock/RateLimiter.cs` | Presupuesto de invocaciones con cubos global, de escritura y por tool, reloj monotónico y adquisición atómica. |
 | `TShock/BridgeWireCodes.cs` | Discriminadores internos del puente que el gateway traduce a códigos públicos. |
 | `Tools/ReadTools.cs` | 12 herramientas sin efectos secundarios. |
 | `Tools/WriteTools.cs` | 6 herramientas de mutación, bloqueadas salvo que se habilite la escritura. |
@@ -89,18 +90,21 @@ Ventajas concretas:
 1. El anfitrión MCP arranca `tshock-mcp` como proceso hijo y completa el handshake JSON-RPC por
    stdin/stdout.
 2. El modelo invoca una herramienta, por ejemplo `player_info` con `player = "Alice"`.
-3. El SDK de MCP deserializa los argumentos y llama al método correspondiente.
-4. La herramienta valida el argumento antes de la red: falta, vacío, tipo incorrecto, más largo que
+3. El SDK de MCP empareja el primitivo, deserializa los argumentos y prepara la llamada.
+4. El filtro de `Program.cs` comprueba el presupuesto de invocaciones antes del binding. Si el cubo
+   global, el de escritura o el de la tool no tiene un token, devuelve `rate_limited` con
+   `details.retryAfterMs` sin ejecutar la tool ni tocar la red.
+5. La herramienta valida el argumento antes de la red: falta, vacío, tipo incorrecto, más largo que
    su límite en code points o con caracteres de control produce `invalid_argument`. El límite se
    publica además como `maxLength` en el `inputSchema`; la validación en runtime es la autoridad.
-5. Si es una herramienta de escritura y `TSHOCK_MCP_ALLOW_WRITE` es `false`, devuelve
+6. Si es una herramienta de escritura y `TSHOCK_MCP_ALLOW_WRITE` es `false`, devuelve
    `write_disabled` sin tocar la red.
-6. `ITShockClient` compone la URL sobre `TSHOCK_REST_URL`, agrega `token` como parámetro de consulta
+7. `ITShockClient` compone la URL sobre `TSHOCK_REST_URL`, agrega `token` como parámetro de consulta
    y ejecuta un `GET` con el timeout configurado.
-7. La respuesta se lee con un límite de tamaño, se parsea como JSON y se redactan las credenciales
+8. La respuesta se lee con un límite de tamaño, se parsea como JSON y se redactan las credenciales
    siempre y las IP según la configuración.
-8. `ToolResults` envuelve el resultado y lo devuelve como cadena JSON. El SDK lo envía al anfitrión.
-9. El registro de auditoría anota operación, ruta, estado HTTP y duración, sin argumentos.
+9. `ToolResults` envuelve el resultado y lo devuelve como cadena JSON. El SDK lo envía al anfitrión.
+10. El registro de auditoría anota operación, ruta, estado HTTP y duración, sin argumentos.
 
 No hay reintentos automáticos: las operaciones de escritura no son idempotentes y reintentar a
 ciegas podría duplicar efectos. El modelo decide si vuelve a intentar.
@@ -117,6 +121,7 @@ verifica contra `ErrorCodes.All` en `tests/TShock.MCP.Server.Tests/ErrorCodesTes
 | --- | --- | --- | --- | --- |
 | `invalid_argument` | Validación | Falta un argumento obligatorio, llega vacío, tiene un tipo incorrecto o no pasa la validación local (por ejemplo, excede su límite de code points o contiene caracteres de control o formato invisible). No se hizo ninguna petición HTTP. | ausente | Corregir la llamada. |
 | `write_disabled` | Política | Se invocó una herramienta de escritura con `TSHOCK_MCP_ALLOW_WRITE` desactivado. | ausente | Habilitar la variable y reiniciar el anfitrión. |
+| `rate_limited` | Política | Se agotó el cubo global, el de escritura o el de la tool. No se hizo ninguna petición HTTP. | ausente | Esperar `details.retryAfterMs` y reintentar; no repetir de inmediato. |
 | `confirmation_required` | Política | `region_delete` necesita confirmación y el cliente no puede pedirla al operador, ni se envió `confirm: true`. | ausente | Pasar `confirm: true` o usar un cliente con elicitation. |
 | `confirmation_declined` | Política | El operador rechazó la confirmación de `region_delete`. | ausente | Ninguna; no se borró nada. |
 | `rest_error` | TShock REST | TShock respondió con un estado HTTP de error (401, 403, 404, 500…), o con estado 200 y un campo `error` en el cuerpo. El mensaje es el texto de TShock, saneado. | presente (puede ser `200`) | Revisar token, permisos y disponibilidad del servidor. |
@@ -145,6 +150,58 @@ Reglas del sobre:
   aparece cuando existe una respuesta HTTP asociada.
 - Los mensajes de error se escriben en inglés, son breves y nunca incluyen el token ni cuerpos
   completos de respuesta.
+
+## Rate limiting
+
+El spec 2026-07-28 incluye *«Rate limit tool invocations»* entre las obligaciones **MUST** del
+servidor. El gateway lo aplica en el filtro de `Program.cs`, antes del binding de argumentos, con
+tres cubos de fichas que se comprueban a la vez:
+
+| Cubo | Alcance | Default | Variable |
+| --- | --- | --- | --- |
+| Global | Todas las invocaciones | 120/min | `TSHOCK_MCP_RATE_LIMIT_PER_MINUTE` |
+| Escritura | Tools con `readOnlyHint: false` | 20/min | `TSHOCK_MCP_WRITE_RATE_LIMIT_PER_MINUTE` |
+| Tool | Una tool concreta | Mitad de su clase (`max(1, classRate / 2)`) | Constante de código |
+
+La capacidad del cubo es su tasa por minuto y la recarga es continua (`tasa / 60` por segundo), así
+que una ráfaga puede consumir como máximo un minuto de presupuesto. El cubo por tool impide que una
+sola herramienta monopolice su clase: con los defaults, una lectura puede consumir hasta 60/min y
+una escritura hasta 10/min, aunque el cupo global siga disponible. Es una política de *fair share*
+de código, no una tercera variable de entorno.
+
+La adquisición es **atómica**: la llamada consume un token de todos los cubos aplicables o de
+ninguno. Si el cubo de escritura deniega, el global no se descuenta; de lo contrario un bucle de
+escrituras agotaría el presupuesto de lectura sin haber llegado a TShock. Cuando más de un cubo está
+vacío, `retryAfterMs` es el mayor de los tiempos de espera, no el primero que se encuentre.
+
+Se cuenta **toda** invocación `tools/call`, incluidas las que después fallan por argumentos
+inválidos, las que devuelven `write_disabled` y los reintentos de *multi round-trip* (por ejemplo, la
+confirmación de `region_delete`). Una tool inexistente no crea un cubo por tool: el SDK no empareja
+ningún primitivo y la llamada solo consume el cubo global, lo que evita un diccionario que crezca con
+nombres controlados por el cliente. El catálogo actual no usa tools respaldadas por tareas; si se
+agregaran, la comprobación debe moverse a `CallToolWithAlternateFilters` para contar la creación de
+la tarea y no solo su ejecución.
+
+La configuración es estricta: entero entre `1` y `60000`, sin `0`. Un valor ausente usa el default;
+uno no numérico, negativo o fuera de rango impide el arranque y el mensaje nombra la variable. No hay
+interruptor de apagado porque el límite es una obligación del protocolo, no una comodidad.
+
+El error es aditivo y conserva el sobre:
+
+```json
+{"ok":false,"error":{"code":"rate_limited","message":"The tool invocation rate limit was exceeded. Retry after 59943 ms.","details":{"retryAfterMs":59943}}}
+```
+
+`isError` es `true` porque la llamada se rechaza antes de ejecutar, igual que `invalid_argument`. No
+hay `httpStatus` porque no hubo respuesta HTTP. El rechazo se registra en `LogDebug` con tool, ámbito
+y espera, nunca con argumentos ni token: un bucle denegado no debe convertirse en una inundación de
+`stderr`.
+
+Límites del propio límite: es por proceso, en memoria, se reinicia con el proceso y no es una cuota
+multiinquilino ni distribuida. Tampoco acota llamadas **en vuelo**; un token bucket limita la tasa,
+no la concurrencia. El *bulkhead* de concurrencia queda como trabajo futuro. El bucket REST de TShock
+(`RESTMaximumRequestsPerInterval`) protege la emisión de tokens de login, no las llamadas con un
+token de aplicación; por eso el gateway necesita su propio presupuesto.
 
 ## Decisiones de diseño
 

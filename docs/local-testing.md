@@ -483,6 +483,7 @@ El token de `~/.config/tshock-mcp/token` se puede conservar para la próxima pru
 | `tshock` no aparece en `opencode mcp list` | Configuración en el proyecto equivocado o servicio sin reiniciar | Repetir desde la raíz, `opencode service restart` |
 | El host rechaza la sesión MCP | El comando escribe en stdout o la ruta no existe | Usar el binario compilado y el envoltorio; revisar logs |
 | `write_disabled` | Escritura desactivada | `TSHOCK_MCP_ALLOW_WRITE=true` y reiniciar |
+| `rate_limited` | Se agotó el presupuesto de invocaciones | Esperar `details.retryAfterMs` o subir `TSHOCK_MCP_RATE_LIMIT_PER_MINUTE` / `TSHOCK_MCP_WRITE_RATE_LIMIT_PER_MINUTE` |
 | `reload_config` devuelve `500` | Token inyectado con `-rest-token`; TShock lo reañade al recargar | Mover el token a `config.json` y arrancar sin ese flag (ver §2) |
 | Disco lleno | Imágenes y caché de Docker | `docker system df`; limpiar solo lo que se entienda |
 

@@ -14,6 +14,7 @@ public sealed class ErrorCodesTests
     {
         "invalid_argument",
         "write_disabled",
+        "rate_limited",
         "confirmation_required",
         "confirmation_declined",
         "rest_error",

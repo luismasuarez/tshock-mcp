@@ -51,6 +51,7 @@ en el servidor de juego. El modelo nunca ve el token ni habla directamente con T
 | Fuga de IP de jugadores al modelo | Privacidad | Redacción a `<redacted>` salvo `TSHOCK_MCP_SHOW_IPS=true`. |
 | Respuestas enormes o lentas | Consumo de memoria o bloqueo | Timeout configurable y límite de tamaño con `response_too_large`. |
 | Argumentos enormes o con caracteres de control | Inundación del chat, inflado del contexto del modelo, inyección de líneas en logs | Límite por argumento en code points, rechazo de control/formato y validación antes de la red; el límite se publica como `maxLength` en `inputSchema`. |
+| Bucle del modelo o cliente que invoca tools sin límite | Inundación del chat, saturación de TShock y agotamiento del contexto | Cubos global, de escritura y por tool; `rate_limited` con `details.retryAfterMs` antes del binding y sin tráfico. Es un límite por proceso, no una cuota multiinquilino. |
 | Servidor TShock comprometido | Datos falsos hacia el modelo | El agente no ejecuta lo que lee; la escritura sigue limitada a 6 rutas. |
 | Dependencia NuGet comprometida | Ejecución de código en el host | Versiones fijadas, CI reproducible y revisión de actualizaciones. |
 | Fuga del token del puente | Crear o borrar regiones y leer eventos | Token propio, archivo con permisos `600`, sin TLS solo en loopback, nunca se registra y se compara en tiempo constante. |
@@ -61,8 +62,10 @@ en el servidor de juego. El modelo nunca ve el token ni habla directamente con T
 
 No se cubren en la Fase 0: autenticación de múltiples usuarios del servidor MCP, autorización por
 herramienta, cuotas por cliente, aislamiento multiinquilino, OAuth 2.1 ni transporte HTTP. Un
-servidor MCP expuesto por red sin esas capas no es un despliegue soportado. El puente de Fase 1
-agrega una superficie local que se describe en la sección siguiente; no cambia este límite.
+servidor MCP expuesto por red sin esas capas no es un despliegue soportado. El rate limiting local
+de P0-03 protege contra un bucle en el proceso; no es una cuota por cliente ni se comparte entre
+procesos. El puente de Fase 1 agrega una superficie local que se describe en la sección siguiente;
+no cambia este límite.
 
 ## El token
 

@@ -32,7 +32,7 @@ Reglas que ninguna entrada puede romper:
 | P0-02 | Límites y política de argumentos de texto | P0 | 1 sesión | — | Hecho |
 | P0-06 | Títulos de tool como contrato | P0 | 1 sesión | — | Hecho |
 | P2-15 | Snapshot del contrato de `tools/list` | P2 | 1 sesión | P0-06 | Hecho |
-| P0-03 | Rate limiting por tool | P0 | 1 sesión | P1-09 | Pendiente |
+| P0-03 | Rate limiting por tool | P0 | 1 sesión | P1-09 | Hecho |
 | P0-04 | Correlación en la auditoría | P0 | 1 sesión | — | Pendiente |
 | P0-05 | Paginación opcional en listas | P0 | 1 sesión | — | Pendiente |
 | P0-01 | `structuredContent` y `outputSchema` | P0 | 2 sesiones | P1-09, P2-15 | Pendiente |
@@ -122,17 +122,55 @@ Reglas que ninguna entrada puede romper:
 
 ### P0-03 · Rate limiting por tool
 
-- **Prioridad:** P0 · **Esfuerzo:** 1 sesión · **Depende de:** P1-09
-- **Problema:** no hay límite de invocaciones. El spec marca el rate limiting como **MUST**.
-- **Cambios:**
-  - `TShock/RateLimiter.cs` con token bucket por tool y global, usando `TimeProvider` para poder
-    probarlo con reloj falso.
-  - Variables nuevas: `TSHOCK_MCP_RATE_LIMIT_PER_MINUTE` (global, por defecto 120) y
-    `TSHOCK_MCP_WRITE_RATE_LIMIT_PER_MINUTE` (escrituras, por defecto 20).
-  - Código nuevo `rate_limited` con `details.retryAfterMs`. Es aditivo y debe documentarse en
-    `docs/tools.md` y en la tabla de errores de `docs/architecture.md`.
-- **Aceptación:** pruebas con reloj falso para el límite global y el de escritura; la e2e comprueba
-  que el código aparece y que el token no se filtra.
+- **Prioridad:** P0 · **Esfuerzo:** 1 sesión · **Depende de:** P1-09 (hecho)
+- **Problema:** el spec 2026-07-28 obliga a *«Rate limit tool invocations»* y hoy no hay límite. Un
+  modelo en bucle, un reintento del host o una secuencia de escrituras llega íntegra a TShock. En
+  stdio hay un cliente por proceso: el objetivo no es una cuota multiinquilino, sino acotar el daño
+  local y mantener el servidor de juego disponible.
+- **Evidencia:** el texto normativo no fija algoritmo; el SDK 2.3.0 empareja el primitivo antes de
+  los filtros, así que `MatchedPrimitive` está disponible; una tool inexistente ya llega al filtro
+  (hoy devuelve `unexpected_error`) y no debe crear estado por nombre.
+- **Diseño:**
+  - `TShock/RateLimiter.cs`: token bucket con `TimeProvider` monotónico. Tres cubos:
+    global (`TSHOCK_MCP_RATE_LIMIT_PER_MINUTE`, default 120), escritura
+    (`TSHOCK_MCP_WRITE_RATE_LIMIT_PER_MINUTE`, default 20) y tool.
+  - El cubo por tool usa `max(1, classRate / 2)`: fair share de código, sin tercera variable. Una
+    lectura puede consumir hasta 60/min y una escritura hasta 10/min con los defaults.
+  - Capacidad = tasa por minuto; recarga continua = tasa/60 por segundo. El burst máximo es un
+    minuto de presupuesto.
+  - **Adquisición atómica:** se recargan y comprueban los cubos aplicables y se consumen todos o
+    ninguno. Si el de escritura deniega, el global no se descuenta. `retryAfterMs` es el máximo de
+    los cubos denegados, con techo y mínimo 1.
+  - **Clasificación:** escritura si `MatchedPrimitive is McpServerTool` y
+    `ProtocolTool.Annotations.ReadOnlyHint != true`; un primitivo ausente solo consume el global. Sin
+    lista manual y sin indexar por `params.name`.
+  - **Punto de aplicación:** filtro `AddCallToolFilter` de `Program.cs`, antes del binding. Cuenta
+    toda invocación, incluidos argumentos inválidos, `write_disabled` y reintentos MRTR.
+  - **Reloj:** `GetTimestamp`/`GetElapsedTime`; un salto hacia atrás no crea fichas.
+  - **Configuración:** enteros `1..60000`, sin `0`; ausente usa el default, inválido impide el
+    arranque. La variable de escritura se valida aunque `TSHOCK_MCP_ALLOW_WRITE=false`.
+  - **Error:** `rate_limited`, `details.retryAfterMs` entero, sin `httpStatus`, `isError: true`
+    porque se rechaza antes de ejecutar. Se añade a `ErrorCodes.All` y a la tabla canónica.
+  - **Registro:** `LogDebug` con tool, ámbito y espera; nunca argumentos ni token.
+- **Cambios:** `TShock/RateLimiter.cs`, `Tools/ToolRateLimitCatalog.cs`,
+  `Configuration/TShockOptions.cs`, `Program.cs`, `TShock/ErrorCodes.cs`; pruebas unitarias
+  (`RateLimiterTests`, `ToolRateLimitCatalogTests`, `TShockOptionsTests`, `ErrorCodesTests`); e2e con
+  dos procesos de presupuesto bajo; `docs/architecture.md`, `docs/tools.md`, `docs/security.md`,
+  `docs/testing.md`, `README.md`, `docs/roadmap.md` y esta entrada.
+- **Aceptación:**
+  - Unidad con reloj falso: global, escritura, fair share, recarga exacta, reloj hacia atrás,
+    atomicidad (una escritura denegada no cobra el global), 100 llamadas concurrentes con cupo 10 →
+    exactamente 10, tool inexistente y configuración inválida.
+  - Reflexión: las 23 tools declaran `readOnlyHint` y la clasificación coincide con esa anotación.
+  - E2E: primera llamada `ok` y segunda `rate_limited` con `isError: true` y
+    `details.retryAfterMs` en `(0, 60000]`; el contador del TShock falso crece exactamente una vez;
+    lo mismo para `broadcast` con el cupo de escritura; el token no aparece en `stderr`.
+  - El snapshot de `tools/list` sigue idéntico. Build, pruebas y e2e verdes.
+- **Riesgo:** el límite es por proceso y en memoria, se reinicia con el proceso y varios procesos
+  multiplican el cupo. No acota llamadas en vuelo: el *bulkhead* de concurrencia queda como entrada
+  aparte y se documenta como riesgo residual. Un valor alto es una decisión deliberada del operador.
+- **Fuera de alcance:** semáforo de concurrencia, cuotas por cliente de Fase 2, métricas (P2-12),
+  correlación de auditoría (P0-04) y límites distribuidos.
 
 ### P0-04 · Correlación en la auditoría
 
@@ -452,7 +490,7 @@ Las dependencias mandan, pero este orden maximiza el valor temprano:
 1. **P0-02** — cierra un agujero real.
 2. **P0-06** — contrato visible, casi gratis.
 3. **P2-15** — congela el contrato antes de tocarlo.
-4. **P0-03**, **P0-04**, **P0-05**.
+4. **P0-04**, **P0-05** (P0-03 ya está hecho).
 5. **P0-01** — la más grande de P0.
 6. **P0-07** — alinea el flag del protocolo con el sobre.
 7. **P1-07**, **P1-08**, **P1-11**, **P1-10**.
@@ -484,3 +522,4 @@ Al terminar:
 | 2026-11-05 | P0-02 · Límites y política de argumentos de texto | — | Commit único; code points, control/formato, `maxLength` en `inputSchema`, guard de reflexión y e2e con contador de peticiones. |
 | 2026-11-05 | P0-06 · Títulos de tool como contrato de interfaz | — | Commit único; 23 títulos con política, guard de catálogo y verificación legacy/modern. |
 | 2026-11-05 | P2-15 · Snapshot del contrato de `tools/list` | — | Commit único; snapshot generado, paridad de tres eras, invariancia de configuración y self-test del comparador. |
+| 2026-11-06 | P0-03 · Rate limiting por tool | — | Commit único; cubos global/escritura/tool con adquisición atómica, reloj falso, `rate_limited` con `retryAfterMs` y e2e con contador de peticiones. |

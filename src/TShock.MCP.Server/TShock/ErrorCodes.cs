@@ -15,6 +15,9 @@ public static class ErrorCodes
     /// <summary>A write tool was called while writes are disabled.</summary>
     public const string WriteDisabled = "write_disabled";
 
+    /// <summary>An invocation exceeded a rate limit before reaching the network.</summary>
+    public const string RateLimited = "rate_limited";
+
     /// <summary>A destructive bridge call needs explicit confirmation.</summary>
     public const string ConfirmationRequired = "confirmation_required";
 
@@ -83,6 +86,7 @@ public static class ErrorCodes
     {
         InvalidArgument,
         WriteDisabled,
+        RateLimited,
         ConfirmationRequired,
         ConfirmationDeclined,
         RestError,

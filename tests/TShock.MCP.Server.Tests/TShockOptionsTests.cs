@@ -135,6 +135,60 @@ public sealed class TShockOptionsTests
         Assert.True(options.AllowElicitation);
         Assert.Equal(TimeSpan.FromSeconds(15), options.Timeout);
         Assert.Null(options.AuditLogPath);
+        Assert.Equal(120, options.RateLimit.PerMinute);
+        Assert.Equal(20, options.RateLimit.WritePerMinute);
+    }
+
+    [Fact]
+    public void FromEnvironment_ParsesRateLimits()
+    {
+        using var env = new EnvironmentScope();
+        env.ClearAll();
+        env.Set("TSHOCK_TOKEN", "token");
+        env.Set("TSHOCK_MCP_RATE_LIMIT_PER_MINUTE", "7");
+        env.Set("TSHOCK_MCP_WRITE_RATE_LIMIT_PER_MINUTE", "3");
+
+        var options = TShockOptions.FromEnvironment();
+
+        Assert.Equal(7, options.RateLimit.PerMinute);
+        Assert.Equal(3, options.RateLimit.WritePerMinute);
+    }
+
+    [Theory]
+    [InlineData("TSHOCK_MCP_RATE_LIMIT_PER_MINUTE", "0")]
+    [InlineData("TSHOCK_MCP_RATE_LIMIT_PER_MINUTE", "-1")]
+    [InlineData("TSHOCK_MCP_RATE_LIMIT_PER_MINUTE", "60001")]
+    [InlineData("TSHOCK_MCP_RATE_LIMIT_PER_MINUTE", "1.5")]
+    [InlineData("TSHOCK_MCP_RATE_LIMIT_PER_MINUTE", "abc")]
+    [InlineData("TSHOCK_MCP_WRITE_RATE_LIMIT_PER_MINUTE", "0")]
+    [InlineData("TSHOCK_MCP_WRITE_RATE_LIMIT_PER_MINUTE", "-1")]
+    [InlineData("TSHOCK_MCP_WRITE_RATE_LIMIT_PER_MINUTE", "60001")]
+    [InlineData("TSHOCK_MCP_WRITE_RATE_LIMIT_PER_MINUTE", "1.5")]
+    [InlineData("TSHOCK_MCP_WRITE_RATE_LIMIT_PER_MINUTE", "abc")]
+    public void FromEnvironment_RejectsInvalidRateLimits(string name, string value)
+    {
+        using var env = new EnvironmentScope();
+        env.ClearAll();
+        env.Set("TSHOCK_TOKEN", "token");
+        env.Set(name, value);
+
+        var exception = Assert.Throws<ConfigurationException>(() => TShockOptions.FromEnvironment());
+
+        Assert.Contains(name, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FromEnvironment_ValidatesTheWriteRateEvenWhenWritesAreDisabled()
+    {
+        using var env = new EnvironmentScope();
+        env.ClearAll();
+        env.Set("TSHOCK_TOKEN", "token");
+        env.Set("TSHOCK_MCP_ALLOW_WRITE", "false");
+        env.Set("TSHOCK_MCP_WRITE_RATE_LIMIT_PER_MINUTE", "0");
+
+        var exception = Assert.Throws<ConfigurationException>(() => TShockOptions.FromEnvironment());
+
+        Assert.Contains("TSHOCK_MCP_WRITE_RATE_LIMIT_PER_MINUTE", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

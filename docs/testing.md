@@ -32,6 +32,31 @@ parámetro `string` no declara `[MaxLength]`. La e2e comprueba el rechazo por MC
 peticiones del TShock/puente falso no crece, que el payload no aparece en `stderr` y que
 `tools/list` publica `maxLength`.
 
+### Rate limiting
+
+La suite unitaria usa un `ManualTimeProvider` propio (sin paquete adicional) y cubre: cupo global,
+cupo de escritura, fair share por tool, recarga exacta, `retryAfterMs` con techo y mínimo, reloj que
+retrocede, tool inexistente, concurrencia (100 llamadas con cupo 10 → exactamente 10) y adquisición
+atómica (una escritura denegada no consume el token global). `ToolRateLimitCatalogTests` construye
+el registro real por ensamblado y comprueba que cada una de las 23 tools declara `readOnlyHint` y que
+la clasificación de lectura/escritura coincide con esa anotación; una tool nueva sin hint rompe la
+suite.
+
+La e2e abre dos procesos nuevos con presupuestos bajos y comprueba el contrato por MCP:
+
+- `TSHOCK_MCP_RATE_LIMIT_PER_MINUTE=1`: la primera lectura responde `ok`; la segunda devuelve
+  `rate_limited`, `isError: true`, `details.retryAfterMs` en `(0, 60000]`, y el contador de peticiones
+  del TShock falso crece exactamente una vez.
+- `TSHOCK_MCP_WRITE_RATE_LIMIT_PER_MINUTE=1`: el primer `broadcast` responde `ok`; el segundo
+  devuelve `rate_limited` y no llega al TShock falso.
+- En ambos casos el token no aparece en `stderr`.
+
+Verificación real: contra TShock 6.2.1, con `TSHOCK_MCP_RATE_LIMIT_PER_MINUTE=1`, la primera llamada
+a `server_status` respondió `ok` y la segunda `rate_limited` con `details.retryAfterMs`; el token no
+apareció en `stderr`. Con cupo global 10 y el cubo por tool en 5/min, las primeras cinco llamadas
+respondieron `ok` y la sexta `rate_limited`, lo que confirma el fair share en el binario real. La
+presión sostenida y el efecto en el chat siguen pendientes.
+
 ### Títulos de las tools
 
 `ToolTitleTests` recorre el catálogo registrado por ensamblado y compara los 23 títulos con una
@@ -86,7 +111,8 @@ dotnet test -c Release --no-build
 python3 tests/e2e/mcp_stdio_smoke.py
 ```
 
-Resultado esperado hoy: 0 advertencias, 291 pruebas superadas y `E2E PASSED` con 96 comprobaciones.
+Resultado esperado hoy: 0 advertencias, 314 pruebas superadas (269 del gateway y 45 del puente) y
+`E2E PASSED` con 107 comprobaciones.
 
 ### Plugin del puente
 
@@ -175,6 +201,7 @@ puente solo por haberla probado con `curl`.
 | --- | --- | --- | --- | --- |
 | 18 tools REST de Fase 0 | Sí | No aplica | Sí: catálogo y casos representativos | Sí |
 | Límites de argumentos | Sí: frontera, code points, control y guard de reflexión | No aplica | Sí: rechazo, `maxLength` y contador de peticiones | Pendiente: chat real con el límite |
+| Rate limiting | Sí: cubos, reloj falso, atomicidad, concurrencia y clasificación | No aplica | Sí: límite global y de escritura, `retryAfterMs` y contador de peticiones | Parcial: llamada real permitida y siguiente `rate_limited`; falta presión sostenida |
 | Regiones del puente | No | Verificado manualmente | No existe tool | Parcial: crear, leer y borrar |
 | Eventos del puente | Sí (`EventBuffer`) | Verificado manualmente | No existe tool | Parcial: región, entrada y comando |
 | `BridgeClient` | Sí (falso HTTP) | No aplica | Sí | No |

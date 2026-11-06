@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -6,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using TShock.McpServer.TShock;
+using TShock.McpServer.Tools;
 
 TShockOptions options;
 try
@@ -17,6 +19,10 @@ catch (ConfigurationException ex)
     Console.Error.WriteLine($"tshock-mcp: configuration error: {ex.Message}");
     return 1;
 }
+
+// The limiter is created before the host so the filter below can capture it
+// directly. A missing dependency cannot turn the guard off at runtime.
+var rateLimiter = new ToolRateLimiter(options.RateLimit, TimeProvider.System);
 
 var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
 {
@@ -71,6 +77,17 @@ builder.Services
     // generic transport-level error.
     .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (request, cancellationToken) =>
     {
+        // Count every tools/call, including invalid arguments, blocked writes and
+        // multi-round-trip retries: they are invocations and a loop of them must not
+        // reach TShock forever. Unknown tool names match no primitive and only spend
+        // the global budget, so they cannot grow the per-tool dictionary.
+        var (toolName, isWrite) = ToolRateLimitCatalog.Describe(request.MatchedPrimitive);
+        var decision = rateLimiter.Acquire(toolName, isWrite);
+        if (!decision.Allowed)
+        {
+            return CallToolErrors.RateLimited(request, decision);
+        }
+
         try
         {
             return await next(request, cancellationToken).ConfigureAwait(false);
@@ -121,6 +138,18 @@ internal static class CallToolErrors
     internal static CallToolResult Unexpected() =>
         Build(ErrorCodes.UnexpectedError, "The tool failed with an unexpected error.");
 
+    internal static CallToolResult RateLimited(
+        RequestContext<CallToolRequestParams> request,
+        RateLimitDecision decision)
+    {
+        LogRateLimited(request, decision);
+
+        return Build(
+            ErrorCodes.RateLimited,
+            $"The tool invocation rate limit was exceeded. Retry after {decision.RetryAfterMs} ms.",
+            new JsonObject { ["retryAfterMs"] = decision.RetryAfterMs });
+    }
+
     internal static void LogUnexpected(RequestContext<CallToolRequestParams> request, Exception exception)
     {
         var loggerFactory = request.Services?.GetService(typeof(ILoggerFactory)) as ILoggerFactory;
@@ -141,9 +170,28 @@ internal static class CallToolErrors
             Sanitize(exception.Message, options));
     }
 
-    private static CallToolResult Build(string code, string message) => new()
+    private static void LogRateLimited(
+        RequestContext<CallToolRequestParams> request,
+        RateLimitDecision decision)
     {
-        Content = [new TextContentBlock { Text = ToolResults.Error(code, message) }],
+        var loggerFactory = request.Services?.GetService(typeof(ILoggerFactory)) as ILoggerFactory;
+        if (loggerFactory is null)
+        {
+            return;
+        }
+
+        // Debug level: a denied loop must not turn the rate limiter into a log
+        // flood. Never log arguments or the token.
+        loggerFactory.CreateLogger(LoggerCategory).LogDebug(
+            "Rate limit denied tool {Tool} scope={Scope} retryAfterMs={RetryAfterMs}",
+            ToolName(request),
+            decision.Scope,
+            decision.RetryAfterMs);
+    }
+
+    private static CallToolResult Build(string code, string message, JsonNode? details = null) => new()
+    {
+        Content = [new TextContentBlock { Text = ToolResults.Error(code, message, details: details) }],
         IsError = true
     };
 

@@ -242,6 +242,8 @@ con `--network host` use `http://127.0.0.1:7878` y omita la variable de inseguri
 | `TSHOCK_MCP_SHOW_IPS` | `false` | Muestra las IP de los jugadores en lugar de `<redacted>`. |
 | `TSHOCK_MCP_ALLOW_INSECURE` | `false` | Permite HTTP sin cifrar hacia un host que no es de loopback. Envía el token en claro. |
 | `TSHOCK_MCP_TIMEOUT_SECONDS` | `15` | Tiempo máximo de espera HTTP, entre 1 y 300. Un valor no numérico o fuera de rango impide el arranque. |
+| `TSHOCK_MCP_RATE_LIMIT_PER_MINUTE` | `120` | Invocaciones por minuto compartidas por todas las tools. Entero entre 1 y 60000; `0` o un valor inválido impide el arranque. |
+| `TSHOCK_MCP_WRITE_RATE_LIMIT_PER_MINUTE` | `20` | Invocaciones por minuto para las tools de escritura. Entero entre 1 y 60000; se valida aunque la escritura esté deshabilitada. |
 | `TSHOCK_MCP_AUDIT_LOG` | *(sin definir)* | Ruta opcional a un registro de auditoría JSONL. |
 | `TSHOCK_MCP_ALLOW_ELICITATION` | `true` | Permite que las tools destructivas pidan confirmación al humano por *elicitation*. Con `false` nunca preguntan y exigen el argumento `confirm: true`. Útil cuando el host declara la capacidad pero su UI no muestra el diálogo en un modo concreto. |
 | `TSHOCK_BRIDGE_URL` | `http://127.0.0.1:7879` | URL base del plugin `TShock.AgentBridge`. Si **ninguna** variable `TSHOCK_BRIDGE_*` está definida, el puente queda deshabilitado y sus herramientas responden `bridge_unavailable`. |
@@ -333,6 +335,9 @@ códigos está en [docs/architecture.md](docs/architecture.md#mapeo-de-errores).
   de una prohibición). Los campos `token` y `password` se redactan siempre.
 - **Salida no confiable.** Nombres de jugadores, chat y MOTD son datos que provienen de terceros. El
   modelo debe tratarlos como datos, nunca como instrucciones (riesgo de inyección de prompts).
+- **Rate limiting local.** Un bucle del modelo se frena con cubos global, de escritura y por tool
+  antes de llegar a TShock; el error `rate_limited` incluye `details.retryAfterMs`. Es un límite por
+  proceso, no una cuota multiinquilino.
 - **Sin comandos arbitrarios.** No hay ejecución de comandos, apagado del servidor ni mutación de
   usuarios o prohibiciones en la Fase 0.
 
@@ -340,7 +345,7 @@ Antes de habilitar escritura, revise [docs/security.md](docs/security.md).
 
 ## Pruebas
 
-Suite unitaria, sin red (291 pruebas: 246 del gateway y 45 del puente):
+Suite unitaria, sin red (314 pruebas: 269 del gateway y 45 del puente):
 
 ```bash
 dotnet test -c Release
@@ -355,9 +360,10 @@ python3 tests/e2e/mcp_stdio_smoke.py
 ```
 
 La prueba e2e requiere Python 3 y verifica el sobre de salida, la redacción de IP y credenciales, el
-bloqueo de escritura, el mapeo de un 403 de TShock, el cursor de `events_since` y la degradación a
-`bridge_unavailable` cuando el puente no responde (96 comprobaciones). Es multiplataforma: usa hilos
-y una cola para leer la salida del proceso, sin depender de `select`.
+bloqueo de escritura, el mapeo de un 403 de TShock, el cursor de `events_since`, el rate limiting
+global y de escritura y la degradación a `bridge_unavailable` cuando el puente no responde
+(107 comprobaciones). Es multiplataforma: usa hilos y una cola para leer la salida del proceso, sin
+depender de `select`.
 
 Cubre las 18 tools REST y las 5 herramientas del puente, incluida la elicitation. El contrato de
 `tools/list` está congelado en `tests/contract/tools-list.snapshot.json` y se verifica en la misma
@@ -381,6 +387,7 @@ Los códigos de esta tabla son un subconjunto de la
 | `rest_error` con `httpStatus: 403` | Token inválido o el grupo del token no tiene el permiso de la ruta. | Revise `ApplicationRestTokens` y los permisos del grupo en TShock. |
 | `write_disabled` | Se invocó una herramienta de escritura sin habilitarla. | Defina `TSHOCK_MCP_ALLOW_WRITE=true` y reinicie el anfitrión MCP. |
 | `invalid_argument` | Falta un argumento obligatorio, llegó vacío o con un tipo incorrecto. | Corrija la llamada; no se hizo ninguna petición a TShock. |
+| `rate_limited` | Se agotó el presupuesto de invocaciones global, de escritura o de esa tool. | Espere `details.retryAfterMs` antes de reintentar o suba `TSHOCK_MCP_*_RATE_LIMIT_PER_MINUTE`. |
 | `timeout` | El servidor TShock no responde a tiempo. | Suba `TSHOCK_MCP_TIMEOUT_SECONDS` (máximo 300) y revise la carga del servidor. |
 | El anfitrión no inicia la sesión MCP | Algo escribe en stdout o el comando/ruta es incorrecto. | Use la ruta absoluta al binario, compile antes y asegúrese de que solo JSON-RPC va a stdout. |
 | Error de configuración sobre HTTP no seguro | `TSHOCK_REST_URL` apunta a un host remoto por HTTP. | Use HTTPS o, con pleno conocimiento del riesgo, `TSHOCK_MCP_ALLOW_INSECURE=true`. |

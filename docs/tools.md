@@ -16,6 +16,8 @@ Convenciones de la tabla:
 - **Efectos**: consecuencia sobre el servidor. Las herramientas de lectura no mutan estado.
 - Las herramientas de escritura requieren además `TSHOCK_MCP_ALLOW_WRITE=true`; sin esa variable
   devuelven `write_disabled` sin llegar a TShock.
+- Toda invocación consume un presupuesto de rate limiting antes del binding. Si se agota, devuelve
+  `rate_limited` con `details.retryAfterMs` sin llegar a TShock ni al puente.
 - **Argumentos**: faltante, vacío (cadena vacía o solo espacios), de tipo incorrecto, demasiado
   largo o con caracteres de control produce `invalid_argument` sin ninguna petición HTTP. El cliente
   nunca completa ni adivina valores.
@@ -48,6 +50,38 @@ escrituras.
 Los límites son constantes del código (`Tools/ToolSupport.cs`), no variables de entorno: forman parte
 del contrato. `tests/TShock.MCP.Server.Tests/ArgumentLimitContractTests.cs` recorre por reflexión
 todas las tools y falla si un parámetro `string` nuevo no declara su límite.
+
+### Rate limiting
+
+El gateway aplica tres cubos de fichas a las 23 tools: uno global, uno para las tools de escritura y
+uno por tool. Los dos primeros se configuran con variables de entorno; el tercero es una política de
+código que limita cada tool a la mitad del cupo de su clase.
+
+| Variable | Default | Rango | Efecto |
+| --- | --- | --- | --- |
+| `TSHOCK_MCP_RATE_LIMIT_PER_MINUTE` | `120` | `1..60000` | Invocaciones por minuto de todas las tools. |
+| `TSHOCK_MCP_WRITE_RATE_LIMIT_PER_MINUTE` | `20` | `1..60000` | Invocaciones por minuto de las tools con `readOnlyHint: false`. |
+
+El valor `0` no significa «sin límite»: el spec marca el rate limiting como **MUST**, así que se
+rechaza al arrancar junto con los valores no numéricos, negativos o fuera de rango. La capacidad del
+cubo es la tasa por minuto y la recarga es continua; una ráfaga puede consumir como máximo un minuto
+de presupuesto.
+
+La comprobación ocurre antes de validar los argumentos y antes de la red. Por eso también cuentan
+las llamadas que luego devuelven `invalid_argument`, `write_disabled` o una confirmación pendiente:
+son invocaciones y un bucle de ellas también debe frenarse. Un nombre de tool inexistente solo
+consume el cubo global. El detalle del algoritmo, la atomicidad entre cubos y los riesgos residuales
+está en [`architecture.md`](architecture.md#rate-limiting).
+
+Cuando el presupuesto se agota, el sobre es:
+
+```json
+{"ok":false,"error":{"code":"rate_limited","message":"The tool invocation rate limit was exceeded. Retry after 59943 ms.","details":{"retryAfterMs":59943}}}
+```
+
+`details.retryAfterMs` es un entero de milisegundos, siempre mayor que cero. No hay `httpStatus`
+porque no hubo respuesta HTTP. El resultado lleva `isError: true`, igual que `invalid_argument`: la
+llamada se rechazó antes de ejecutar. El mensaje no repite argumentos ni el token.
 
 ## Anotaciones MCP
 

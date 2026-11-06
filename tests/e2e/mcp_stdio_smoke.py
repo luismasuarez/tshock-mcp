@@ -40,6 +40,7 @@ ISOLATED_ENV = (
     "TSHOCK_MCP_SHOW_IPS", "TSHOCK_MCP_AUDIT_LOG", "TSHOCK_MCP_ALLOW_INSECURE",
     "TSHOCK_BRIDGE_URL", "TSHOCK_BRIDGE_TOKEN", "TSHOCK_BRIDGE_TOKEN_FILE",
     "TSHOCK_BRIDGE_TIMEOUT_SECONDS",
+    "TSHOCK_MCP_RATE_LIMIT_PER_MINUTE", "TSHOCK_MCP_WRITE_RATE_LIMIT_PER_MINUTE",
 )
 seen: list[tuple[str, dict[str, list[str]]]] = []
 bridge_seen: list[str] = []
@@ -475,6 +476,74 @@ def run_modern_tools_list(port: int) -> tuple[dict, dict[str, dict], list[dict],
     return discover, tools, tools_raw, proc.stderr.read()
 
 
+def run_rate_limit(
+    port: int,
+    allow_write: bool,
+    per_minute: str,
+    write_per_minute: str,
+    calls: list[tuple[str, dict]],
+) -> tuple[list[dict], str]:
+    """Runs a minimal session with explicit limits and returns each raw result.
+
+    It deliberately does not reuse ``run``: that session makes many calls and
+    would exhaust a one-per-minute budget before reaching the assertions.
+    """
+    env = dict(os.environ)
+    for name in ISOLATED_ENV:
+        env.pop(name, None)
+    env.update({
+        "TSHOCK_REST_URL": f"http://127.0.0.1:{port}",
+        "TSHOCK_TOKEN": TOKEN,
+        "TSHOCK_MCP_ALLOW_WRITE": "true" if allow_write else "false",
+        "TSHOCK_MCP_TIMEOUT_SECONDS": "10",
+        "TSHOCK_MCP_RATE_LIMIT_PER_MINUTE": per_minute,
+        "TSHOCK_MCP_WRITE_RATE_LIMIT_PER_MINUTE": write_per_minute,
+    })
+
+    proc = subprocess.Popen(
+        ["dotnet", str(DEFAULT_DLL)],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env=env, text=True, bufsize=1,
+    )
+    messages: "queue.Queue[str | None]" = queue.Queue()
+    threading.Thread(target=_pump, args=(proc.stdout, messages), daemon=True).start()
+
+    def send(message: dict) -> None:
+        proc.stdin.write(json.dumps(message) + "\n")
+        proc.stdin.flush()
+
+    def raw_call(call_id: int, name: str, arguments: dict) -> dict:
+        send({"jsonrpc": "2.0", "id": call_id, "method": "tools/call",
+              "params": {"name": name, "arguments": arguments}})
+        while True:
+            message = read_message(messages)
+            if message.get("id") == call_id:
+                return message["result"]
+
+    send({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+          "params": {
+              "protocolVersion": "2025-06-18",
+              "capabilities": {},
+              "clientInfo": {"name": "e2e-rate-limit", "version": "0.1"},
+          }})
+    while read_message(messages).get("id") != 1:
+        pass
+    send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+    results = [
+        raw_call(index + 2, name, arguments)
+        for index, (name, arguments) in enumerate(calls)
+    ]
+
+    proc.stdin.close()
+    try:
+        proc.wait(timeout=15)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        raise
+    return results, proc.stderr.read()
+
+
 def check(condition: bool, message: str) -> None:
     if not condition:
         print(f"FAIL: {message}")
@@ -581,6 +650,46 @@ def main() -> int:
                   f"{key} keeps the invalid_argument envelope")
         check("a" * 257 not in stderr,
               "the rejected payload never appears in stderr")
+
+        # Rate limiting: a global budget of one allows exactly one read in the
+        # session. The denied call returns the stable envelope and never reaches
+        # the fake TShock.
+        before_rate = len(seen)
+        rate_results, rate_stderr = run_rate_limit(
+            port, allow_write=False, per_minute="1", write_per_minute="20",
+            calls=[("server_status", {}), ("server_status", {})])
+        check(rate_results[0].get("isError") is not True,
+              "a call inside the global budget succeeds")
+        check(rate_results[1].get("isError") is True,
+              "a call over the global budget is a tool error")
+        rate_envelope = json.loads(rate_results[1]["content"][0]["text"])
+        check(rate_envelope["error"]["code"] == "rate_limited",
+              "the global limit returns the stable rate_limited code")
+        check(0 < rate_envelope["error"].get("details", {}).get("retryAfterMs", 0) <= 60000,
+              "rate_limited carries an actionable retryAfterMs")
+        check(len(seen) - before_rate == 1,
+              "the rate-limited call never reaches TShock")
+        check(TOKEN not in rate_stderr,
+              "the token never appears in stderr when a call is rate-limited")
+
+        # Writes have their own budget: with one write per minute, the second
+        # broadcast is denied even though the global budget is still large.
+        before_write = len(seen)
+        write_results, write_stderr = run_rate_limit(
+            port, allow_write=True, per_minute="60", write_per_minute="1",
+            calls=[("broadcast", {"message": "rate limit"}),
+                   ("broadcast", {"message": "rate limit"})])
+        check(write_results[0].get("isError") is not True,
+              "a write inside its budget succeeds")
+        check(write_results[1].get("isError") is True,
+              "a write over its budget is a tool error")
+        write_envelope = json.loads(write_results[1]["content"][0]["text"])
+        check(write_envelope["error"]["code"] == "rate_limited",
+              "the write limit returns the stable rate_limited code")
+        check(len(seen) - before_write == 1,
+              "the rate-limited write never reaches TShock")
+        check(TOKEN not in write_stderr,
+              "the token never appears in stderr when a write is rate-limited")
 
         check(results["tools"]["server_status"]["annotations"]["readOnlyHint"] is True,
               "read tools are annotated as read-only")
